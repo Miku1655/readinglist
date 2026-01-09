@@ -384,14 +384,17 @@ auth.onAuthStateChanged(user => {
     }
 });
 
-// Fail-safe: If Auth takes too long (e.g. offline), show buttons
+// Fail-safe: show local data if Firebase doesn't respond quickly
 setTimeout(() => {
-    if (document.getElementById("syncStatus").textContent === "Initializing...") {
-        document.getElementById("syncStatus").textContent = "Offline / Local Mode";
+    const status = document.getElementById("syncStatus");
+    if (status.textContent === "Loading local data..." || status.textContent === "Initializing...") {
+        loadAllFromStorage(); // ensures UI is populated
+        status.textContent = currentUser ? `Signed in: ${currentUser.displayName || currentUser.email}` : "Local Mode (offline)";
         document.getElementById("signInBtn").style.display = "inline-block";
         document.getElementById("signInBtn").disabled = false;
     }
 }, 4000);
+
 
 // Auth Buttons
 document.getElementById("signInBtn").addEventListener("click", async () => {
@@ -434,6 +437,8 @@ function loadAllFromStorage() {
     profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}");
     if (!profile.favourites) profile.favourites = [];
     populateShelfFilter();
+    document.getElementById("syncStatus").textContent = currentUser ? `Signed in: ${currentUser.displayName || currentUser.email}` : "Local data loaded";
+
 }
 
 function saveAllToStorage() {
@@ -1005,5 +1010,6 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+
 
 
