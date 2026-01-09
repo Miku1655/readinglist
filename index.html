@@ -276,10 +276,7 @@ let isApplyingRemote = false;
 // Sign in/out UI
 document.getElementById("signInBtn").addEventListener("click", async () => {
     const provider = new firebase.auth.GoogleAuthProvider();
-
-    // Clear any stuck redirect state (mobile safety)
-    await auth.signOut().catch(() => {});
-
+	document.getElementById("signInBtn").disabled = true;
     auth.signInWithRedirect(provider);
 });
 
@@ -1317,6 +1314,7 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
 
 
