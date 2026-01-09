@@ -297,7 +297,6 @@ let profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}");
 if (!profile.favourites) profile.favourites = [];
 
 let currentUser = null;
-let dbRef = null;
 let isApplyingRemote = false;
 let sortState = { column: "recent", direction: -1 };
 
@@ -341,30 +340,20 @@ auth.getRedirectResult()
 auth.onAuthStateChanged(user => {
     currentUser = user;
     if (user) {
-        // Logged In
         document.getElementById("signInBtn").style.display = "none";
         document.getElementById("signOutBtn").style.display = "inline-block";
         document.getElementById("syncStatus").textContent = `Signed in: ${user.displayName || user.email}`;
-        
-        if (user) {
-    document.getElementById("signInBtn").style.display = "none";
-    document.getElementById("signOutBtn").style.display = "inline-block";
-    document.getElementById("syncStatus").textContent = `Signed in: ${user.displayName || user.email}`;
-    
-    // Load Firestore data once
-    const docRef = firestore.collection("users").doc(user.uid);
-    docRef.get().then(doc => {
-        if (!doc.exists) return;
 
-        const data = doc.data();
-        if (data[STORAGE_KEY]) localStorage.setItem(STORAGE_KEY, data[STORAGE_KEY]);
-        if (data[PROFILE_KEY]) localStorage.setItem(PROFILE_KEY, data[PROFILE_KEY]);
-        if (data[GOALS_KEY]) localStorage.setItem(GOALS_KEY, data[GOALS_KEY]);
-        if (data[SHELF_COLORS_KEY]) localStorage.setItem(SHELF_COLORS_KEY, data[SHELF_COLORS_KEY]);
-
+        // Load cloud data
+        loadFromFirestore();  // <— simplified
+    } else {
+        document.getElementById("signInBtn").style.display = "inline-block";
+        document.getElementById("signOutBtn").style.display = "none";
+        document.getElementById("syncStatus").textContent = "Local Mode (offline)";
         loadAllFromStorage();
-        renderCurrentTab();
-    });
+    }
+});
+
 }
 
     } else {
@@ -373,8 +362,6 @@ auth.onAuthStateChanged(user => {
         document.getElementById("signOutBtn").style.display = "none";
         document.getElementById("syncStatus").textContent = "Not signed in (Local only)";
         document.getElementById("signInBtn").disabled = false;
-        if (dbRef) dbRef.off();
-        dbRef = null;
     }
 });
 
@@ -464,21 +451,30 @@ async function loadFromFirebase() {
 
 async function loadFromFirestore() {
     if (!currentUser) return;
+
     const docRef = firestore.collection("users").doc(currentUser.uid);
     try {
         const doc = await docRef.get();
         if (doc.exists) {
             const data = doc.data();
-            books = data.books || [];
-            profile = data.profile || {};
-            goals = data.goals || {};
-            shelfColors = data.shelfColors || {};
-            renderCurrentTab();
+
+            // Save everything to localStorage first
+            if (data.books) localStorage.setItem(STORAGE_KEY, JSON.stringify(data.books));
+            if (data.profile) localStorage.setItem(PROFILE_KEY, JSON.stringify(data.profile));
+            if (data.goals) localStorage.setItem(GOALS_KEY, JSON.stringify(data.goals));
+            if (data.shelfColors) localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(data.shelfColors));
         }
+
+        // Load into memory and render UI
+        loadAllFromStorage();
+
     } catch (err) {
         console.error("Firestore load error:", err);
+        document.getElementById("syncStatus").textContent = "Error loading cloud data (offline mode)";
+        loadAllFromStorage(); // fallback to local
     }
 }
+
 
 
 /**
@@ -987,7 +983,6 @@ document.getElementById("fileInput").addEventListener("change", (e) => {
 document.getElementById("clearStorage").addEventListener("click", () => {
     if (confirm("Delete EVERYTHING? This cannot be undone.")) {
         localStorage.clear();
-        if (dbRef) dbRef.remove();
         location.reload();
     }
 });
@@ -1004,6 +999,7 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+
 
 
 
