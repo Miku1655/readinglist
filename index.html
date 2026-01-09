@@ -257,7 +257,8 @@ const auth = firebase.auth();
 
 let currentUser = null;
 let dbRef = null;
-
+let isApplyingRemote = false;
+	
 // Sign in/out UI
 document.getElementById("signInBtn").addEventListener("click", () => {
     const provider = new firebase.auth.GoogleAuthProvider();
@@ -267,7 +268,17 @@ document.getElementById("signInBtn").addEventListener("click", () => {
 document.getElementById("signOutBtn").addEventListener("click", () => {
     auth.signOut();
 });
+document.getElementById("profileNick").addEventListener("input", e => {
+    profile.nick = e.target.value;
+    scheduleProfileSave();
+});
 
+document.getElementById("profileBio").addEventListener("input", e => {
+    profile.bio = e.target.value;
+    scheduleProfileSave();
+});
+
+	
 auth.onAuthStateChanged(user => {
     currentUser = user;
     if (user) {
@@ -276,15 +287,28 @@ auth.onAuthStateChanged(user => {
         document.getElementById("syncStatus").textContent = `Signed in as ${user.displayName || user.email} (sync active)`;
         dbRef = db.ref("users/" + user.uid);
         loadFromFirebase();
-        // Listen for remote changes
-        dbRef.on("value", snapshot => {
-            const data = snapshot.val();
-            if (data) {
-                // Overwrite localStorage with remote data
-                Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
-                location.reload(); // Simple way to apply all changes
-            }
-        });
+
+dbRef.on("value", snapshot => {
+    if (isApplyingRemote) return;
+
+    const data = snapshot.val();
+    if (!data) return;
+
+    isApplyingRemote = true;
+    Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
+    loadFromStorage();
+    renderTable();
+    renderStats();
+	
+    if (document.querySelector(".tab.active")?.dataset.tab === "profile") {
+        renderProfileStats();
+        renderRecentBooks();
+        renderFavourites();
+    }
+
+    isApplyingRemote = false;
+});
+
     } else {
         document.getElementById("signInBtn").style.display = "inline-block";
         document.getElementById("signOutBtn").style.display = "none";
@@ -305,7 +329,7 @@ auth.getRedirectResult()
         alert("Sign-in failed: " + error.message);
     });
 function saveToFirebase() {
-    if (!currentUser || !dbRef) return;
+    if (!currentUser || !dbRef || isApplyingRemote) return;
     const data = {
         [STORAGE_KEY]: localStorage.getItem(STORAGE_KEY) || "[]",
         [PROFILE_KEY]: localStorage.getItem(PROFILE_KEY) || "{}",
@@ -323,11 +347,24 @@ function loadFromFirebase() {
         const data = snapshot.val();
         if (data) {
             Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
-            location.reload(); // Apply synced data
+			loadFromStorage();
+			renderTable();
+			renderStats();
         }
     });
 }
 
+/* Storage */
+function saveToStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(books)); }
+function loadFromStorage() {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    books = JSON.parse(saved);
+    nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder ?? 0), 0) + 1;
+    populateShelfFilter();
+    renderTable();
+}
+	
 // Hook all save functions to also save to Firebase
 const originalSaveToStorage = saveToStorage;
 saveToStorage = function() {
@@ -501,7 +538,17 @@ document.getElementById("exportData").addEventListener("click", () => {
     a.click();
     URL.revokeObjectURL(a.href);
 });
+/* throttle typing */
+let profileSaveTimeout = null;
 
+function scheduleProfileSave() {
+    clearTimeout(profileSaveTimeout);
+    profileSaveTimeout = setTimeout(() => {
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+        saveToFirebase();
+    }, 500);
+}
+	
 /* Sorting */
 document.querySelectorAll("th").forEach(th =>
     th.addEventListener("click", () => handleSort(th.dataset.col))
@@ -547,6 +594,7 @@ function parseCSV(text) {
         return {
             title: cols[idx("Title")],
             rating: Number(cols[idx("My Rating")]) || 0,
+			series: cols[idx("Series")] || "",
             author: cols[idx("Author")],
             pages: Number(cols[idx("Number of Pages")]) || 0,
             year: Number(cols[idx("Original Publication Year")]) || null,
@@ -936,16 +984,6 @@ function renderShelfManager() {
     });
 }
 
-/* Storage */
-function saveToStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(books)); }
-function loadFromStorage() {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-    books = JSON.parse(saved);
-    nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder ?? 0), 0) + 1;
-    populateShelfFilter();
-    renderTable();
-}
 function loadGoalsForYear() {
     const year = Number(goalYearInput.value);
     const saved = goals[year] || {};
@@ -1270,4 +1308,5 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
