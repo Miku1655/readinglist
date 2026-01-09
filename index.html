@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <style>
     body { font-family: system-ui, -apple-system, sans-serif; background: #111; color: #eee; padding: 20px; margin: 0; }
     h1 { font-size: 1.6em; margin-bottom: 12px; }
@@ -307,6 +306,14 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
 
+const firestore = firebase.firestore();
+
+// Enable offline persistence (better mobile sync)
+firebase.firestore().enablePersistence({ synchronizeTabs: true })
+  .catch((err) => {
+      console.warn("Firestore persistence not enabled:", err.code);
+  });
+
 /**
  * 2. AUTHENTICATION LOGIC
  */
@@ -387,13 +394,30 @@ setTimeout(() => {
 }, 4000);
 
 // Auth Buttons
-document.getElementById("signInBtn").addEventListener("click", () => {
+document.getElementById("signInBtn").addEventListener("click", async () => {
     const provider = new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     document.getElementById("signInBtn").disabled = true;
-    document.getElementById("syncStatus").textContent = "Redirecting to Google...";
-    auth.signInWithRedirect(provider);
+    document.getElementById("syncStatus").textContent = "Signing in...";
+
+    try {
+        // Use popup on desktop, redirect only on mobile
+        if (window.innerWidth <= 800 && /Mobi|Android/i.test(navigator.userAgent)) {
+            await auth.signInWithRedirect(provider);
+        } else {
+            const result = await auth.signInWithPopup(provider);
+            currentUser = result.user;
+            document.getElementById("syncStatus").textContent = `Signed in: ${currentUser.displayName}`;
+            // Load Firestore immediately after popup login
+            loadFromFirestore();
+        }
+    } catch (err) {
+        console.error("Login error:", err);
+        document.getElementById("syncStatus").textContent = "Login failed: " + err.message;
+        document.getElementById("signInBtn").disabled = false;
+    }
 });
+
 
 document.getElementById("signOutBtn").addEventListener("click", () => {
     auth.signOut().then(() => location.reload());
@@ -420,29 +444,43 @@ function saveAllToStorage() {
     saveToFirebase();
 }
 
-function saveToFirebase() {
-    if (!currentUser || !dbRef || isApplyingRemote) return;
-    const data = {
-        [STORAGE_KEY]: localStorage.getItem(STORAGE_KEY) || "[]",
-        [PROFILE_KEY]: localStorage.getItem(PROFILE_KEY) || "{}",
-        [GOALS_KEY]: localStorage.getItem(GOALS_KEY) || "{}",
-        [SHELF_COLORS_KEY]: localStorage.getItem(SHELF_COLORS_KEY) || "{}",
-        [TAB_KEY]: localStorage.getItem(TAB_KEY) || "list"
-    };
-    dbRef.set(data).catch(err => console.error("Sync error:", err));
+async function saveToFirebase() {
+    if (!currentUser) return;
+    const docRef = firestore.collection("users").doc(currentUser.uid);
+    try {
+        await docRef.set({
+            books,
+            profile,
+            goals,
+            shelfColors
+        }, { merge: true });
+    } catch (err) {
+        console.error("Firestore sync error:", err);
+    }
 }
 
-function loadFromFirebase() {
-    if (!currentUser || !dbRef) return;
-    dbRef.once("value").then(snapshot => {
-        const data = snapshot.val();
-        if (data) {
-            Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
-            loadAllFromStorage();
+async function loadFromFirebase() {
+    await loadFromFirestore();
+}
+
+async function loadFromFirestore() {
+    if (!currentUser) return;
+    const docRef = firestore.collection("users").doc(currentUser.uid);
+    try {
+        const doc = await docRef.get();
+        if (doc.exists) {
+            const data = doc.data();
+            books = data.books || [];
+            profile = data.profile || {};
+            goals = data.goals || {};
+            shelfColors = data.shelfColors || {};
             renderCurrentTab();
         }
-    });
+    } catch (err) {
+        console.error("Firestore load error:", err);
+    }
 }
+
 
 /**
  * 4. UI LOGIC - TABS
@@ -967,4 +1005,5 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+
 
