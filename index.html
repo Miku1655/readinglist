@@ -254,6 +254,15 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
+	auth.getRedirectResult()
+  .then(result => {
+    if (result.user) {
+      console.log("Redirect sign-in successful:", result.user.uid);
+    }
+  })
+  .catch(error => {
+    console.error("Redirect sign-in error:", error);
+  });
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
     .catch(err => console.error("Auth persistence error:", err));
 	
@@ -1303,6 +1312,7 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
 
 
