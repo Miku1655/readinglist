@@ -112,7 +112,8 @@
             <label style="margin-bottom: 4px; font-size: 0.85em;">Shelf:</label>
             <select id="shelfFilter" style="margin: 0;"></select>
         </div>
-        <button id="addBook" class="primary">Add Book</button>
+        <button id="sortRecentBtn">Recent ↓</button>
+<button id="addBook" class="primary">Add Book</button>
     </div>
 
     <div class="table-container">
@@ -299,7 +300,7 @@ if (!profile.favourites) profile.favourites = [];
 let currentUser = null;
 let dbRef = null;
 let isApplyingRemote = false;
-let sortState = { column: null, direction: 1 };
+let sortState = { column: "recent", direction: -1 };
 
 // Init Firebase
 firebase.initializeApp(firebaseConfig);
@@ -504,25 +505,36 @@ function renderTable() {
 
     let list = books.filter(b => filter === "all" || b.exclusiveShelf === filter || b.shelves.includes(filter));
     
-    // Sort
-    if (sortState.column) {
-        list.sort((a, b) => {
-            let cmp = 0;
-            let valA = a[sortState.column];
-            let valB = b[sortState.column];
-            
-            if (sortState.column === 'dateRead') {
-                valA = a.dateRead ? new Date(a.dateRead.split(',')[0]).getTime() : 0;
-                valB = b.dateRead ? new Date(b.dateRead.split(',')[0]).getTime() : 0;
-                cmp = valA - valB;
-            } else if (typeof valA === 'number' && typeof valB === 'number') {
+   // Sort
+if (sortState.column) {
+    list.sort((a, b) => {
+        let cmp = 0;
+
+        if (sortState.column === "recent") {
+            const aVal = a.id || a.importOrder || 0;
+            const bVal = b.id || b.importOrder || 0;
+            cmp = aVal - bVal;
+        } 
+        else if (sortState.column === "dateRead") {
+            const aVal = a.dateRead ? new Date(a.dateRead.split(',')[0]).getTime() : 0;
+            const bVal = b.dateRead ? new Date(b.dateRead.split(',')[0]).getTime() : 0;
+            cmp = aVal - bVal;
+        } 
+        else {
+            const valA = a[sortState.column];
+            const valB = b[sortState.column];
+
+            if (typeof valA === "number" && typeof valB === "number") {
                 cmp = valA - valB;
             } else {
                 cmp = String(valA || "").localeCompare(String(valB || ""));
             }
-            return cmp * sortState.direction;
-        });
-    }
+        }
+
+        return cmp * sortState.direction;
+    });
+}
+
 
     // Search
     const query = document.getElementById("searchInput").value.toLowerCase().trim();
@@ -566,6 +578,7 @@ document.querySelectorAll("th[data-col]").forEach(th => {
         sortState.direction = sortState.column === col ? -sortState.direction : 1;
         sortState.column = col;
         document.querySelectorAll(".sort").forEach(s => s.textContent = "");
+        document.getElementById("sortRecentBtn").textContent = "Recent";
         th.querySelector(".sort").textContent = sortState.direction === 1 ? "▲" : "▼";
         renderTable();
     });
@@ -577,6 +590,20 @@ document.getElementById("showNumbers").addEventListener("change", (e) => {
     localStorage.setItem(SHOW_NUM_KEY, e.target.checked);
     renderTable();
 });
+    document.getElementById("sortRecentBtn").addEventListener("click", () => {
+    if (sortState.column !== "recent") {
+        sortState.column = "recent";
+        sortState.direction = -1;
+    } else {
+        sortState.direction *= -1;
+    }
+
+    document.getElementById("sortRecentBtn").textContent =
+        sortState.direction === -1 ? "Recent ↓" : "Recent ↑";
+
+    renderTable();
+});
+
 document.getElementById("showNumbers").checked = JSON.parse(localStorage.getItem(SHOW_NUM_KEY) || "true");
 
 
@@ -940,3 +967,4 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+
