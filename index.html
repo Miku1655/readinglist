@@ -254,16 +254,35 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+    .catch(err => console.error("Auth persistence error:", err));
 
+	// Handle redirect result (important for mobile)
+auth.getRedirectResult()
+    .then(result => {
+        if (result.credential) {
+            // Sign-in successful (will trigger onAuthStateChanged)
+        }
+    })
+    .catch(error => {
+        console.error("Redirect auth error:", error);
+        alert("Sign-in failed: " + error.message);
+    });
+	
 let currentUser = null;
 let dbRef = null;
 let isApplyingRemote = false;
 	
 // Sign in/out UI
-document.getElementById("signInBtn").addEventListener("click", () => {
+document.getElementById("signInBtn").addEventListener("click", async () => {
     const provider = new firebase.auth.GoogleAuthProvider();
-    auth.signInWithRedirect(provider); 
+
+    // Clear any stuck redirect state (mobile safety)
+    await auth.signOut().catch(() => {});
+
+    auth.signInWithRedirect(provider);
 });
+
 
 document.getElementById("signOutBtn").addEventListener("click", () => {
     auth.signOut();
@@ -317,17 +336,7 @@ dbRef.on("value", snapshot => {
         dbRef = null;
     }
 });
-// Handle redirect result (important for mobile)
-auth.getRedirectResult()
-    .then(result => {
-        if (result.credential) {
-            // Sign-in successful (will trigger onAuthStateChanged)
-        }
-    })
-    .catch(error => {
-        console.error("Redirect auth error:", error);
-        alert("Sign-in failed: " + error.message);
-    });
+
 function saveToFirebase() {
     if (!currentUser || !dbRef || isApplyingRemote) return;
     const data = {
@@ -1308,5 +1317,6 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
 
