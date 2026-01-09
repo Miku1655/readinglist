@@ -293,7 +293,17 @@ auth.onAuthStateChanged(user => {
         dbRef = null;
     }
 });
-
+// Handle redirect result (important for mobile)
+auth.getRedirectResult()
+    .then(result => {
+        if (result.credential) {
+            // Sign-in successful (will trigger onAuthStateChanged)
+        }
+    })
+    .catch(error => {
+        console.error("Redirect auth error:", error);
+        alert("Sign-in failed: " + error.message);
+    });
 function saveToFirebase() {
     if (!currentUser || !dbRef) return;
     const data = {
@@ -1260,3 +1270,4 @@ renderFavourites();
 </script>
 </body>
 </html>
+
