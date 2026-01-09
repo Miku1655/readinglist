@@ -61,6 +61,8 @@
     .book-title { font-weight: bold; font-size: 0.9em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 4px; }
     .book-author { font-size: 0.8em; color: #999; margin-top: auto; }
 
+    .profile-section-title { font-size: 0.95em; color: #bbb; text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 12px 0; border-bottom: 1px solid #333; padding-bottom: 6px; }
+
     /* Modal */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
     .modal-content { background: #222; padding: 24px; border: 1px solid #444; border-radius: 8px; max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
@@ -84,9 +86,9 @@
 
 <!-- Auth Status Bar -->
 <div style="background: #1a1a1a; padding: 10px; border-radius: 6px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-    <span id="syncStatus">Initializing...</span>
+    <span id="syncStatus">Loading local data...</span>
     <div>
-        <button id="signInBtn" class="primary">Sign in with Google</button>
+        <button id="signInBtn" class="primary" style="display:none;">Sign in with Google</button>
         <button id="signOutBtn" style="display:none;">Sign Out</button>
     </div>
 </div>
@@ -157,10 +159,9 @@
             </div>
         </div>
 
-        <h3 style="border-bottom: 1px solid #333; padding-bottom: 8px;">Recent Books</h3>
-        <div id="recentBooksContainer" class="book-grid"></div>
+        <div id="recentBooksContainer"></div>
 
-        <h3 style="border-bottom: 1px solid #333; padding-bottom: 8px; margin-top: 30px;">Favourites</h3>
+        <h3 class="profile-section-title" style="margin-top: 30px;">Favourites</h3>
         <div id="favouritesContainer" class="book-grid"></div>
     </div>
 </section>
@@ -243,11 +244,17 @@
             <div style="flex:1"><label>Year Pub <input type="number" id="editYear"></label></div>
         </div>
 
-        <label style="margin-top: 10px; display: flex; align-items: center;">
-            <input type="checkbox" id="editFavourite"> Add to Favourites
-        </label>
+        <div style="margin-top: 10px; background: #333; padding: 10px; border-radius: 4px;">
+            <label style="margin-bottom:4px; font-weight:bold;">Favourites Options</label>
+            <label style="margin-bottom:0; display: flex; align-items: center;">
+                <input type="checkbox" id="editFavourite"> Add to Favourites
+            </label>
+            <label style="margin-bottom:0; margin-top:4px; display: flex; align-items: center; font-size: 0.9em; color:#ccc;">
+                <input type="checkbox" id="editShowSeriesFav"> Show Series Name in Favourites
+            </label>
+        </div>
         
-        <label>Notes <textarea id="editNotes"></textarea></label>
+        <label style="margin-top:10px;">Notes <textarea id="editNotes"></textarea></label>
         
         <div class="modal-footer">
             <button id="removeBook" class="danger">Delete Book</button>
@@ -281,7 +288,7 @@ const GOALS_KEY = "reading_goals_per_year";
 const SHELF_COLORS_KEY = "reading_shelf_colors";
 const PROFILE_KEY = "reading_list_profile";
 
-// Global State
+// Global State - Loaded immediately from local storage so render is instant
 let books = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
 let shelfColors = JSON.parse(localStorage.getItem(SHELF_COLORS_KEY) || "{}");
 let goals = JSON.parse(localStorage.getItem(GOALS_KEY) || "{}");
@@ -308,11 +315,12 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
 // B. Handle Redirect Result (Crucial for Mobile)
 auth.getRedirectResult()
     .then((result) => {
-        document.getElementById("signInBtn").disabled = false;
         if (result.user) {
             console.log("Redirect login success:", result.user.displayName);
-            // onAuthStateChanged will handle the rest
+            document.getElementById("syncStatus").textContent = "Redirect successful. Syncing...";
         }
+        // Force button state just in case
+        document.getElementById("signInBtn").disabled = false;
     })
     .catch((error) => {
         console.error("Redirect error:", error);
@@ -361,10 +369,20 @@ auth.onAuthStateChanged(user => {
         document.getElementById("signInBtn").style.display = "inline-block";
         document.getElementById("signOutBtn").style.display = "none";
         document.getElementById("syncStatus").textContent = "Not signed in (Local only)";
+        document.getElementById("signInBtn").disabled = false;
         if (dbRef) dbRef.off();
         dbRef = null;
     }
 });
+
+// Fail-safe: If Auth takes too long (e.g. offline), show buttons
+setTimeout(() => {
+    if (document.getElementById("syncStatus").textContent === "Initializing...") {
+        document.getElementById("syncStatus").textContent = "Offline / Local Mode";
+        document.getElementById("signInBtn").style.display = "inline-block";
+        document.getElementById("signInBtn").disabled = false;
+    }
+}, 4000);
 
 // Auth Buttons
 document.getElementById("signInBtn").addEventListener("click", () => {
@@ -579,6 +597,9 @@ function openEditModal(book) {
     // Favourites logic
     const isFav = book ? profile.favourites.includes(book.id || book.importOrder) : false;
     document.getElementById("editFavourite").checked = isFav;
+    
+    // Show Series in Fav logic
+    document.getElementById("editShowSeriesFav").checked = book ? !!book.showSeriesInFav : false;
 
     document.getElementById("removeBook").style.display = book ? "inline-block" : "none";
     editModal.style.display = "flex";
@@ -600,7 +621,8 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         rating: Number(document.getElementById("editRating").value) || 0,
         notes: document.getElementById("editNotes").value.trim(),
         exclusiveShelf: document.getElementById("editExclusiveShelf").value,
-        shelves: newShelves
+        shelves: newShelves,
+        showSeriesInFav: document.getElementById("editShowSeriesFav").checked
     };
 
     if (editingBook) {
@@ -679,13 +701,44 @@ document.getElementById("profilePicInput").addEventListener("change", (e) => {
 function renderRecentBooks() {
     const container = document.getElementById("recentBooksContainer");
     container.innerHTML = "";
-    // Filter currently reading
+
+    // 1. Currently Reading
     const current = books.filter(b => b.exclusiveShelf === 'currently-reading');
-    if (current.length === 0) {
-        container.innerHTML = '<div style="color:#666; grid-column:1/-1;">Not reading anything currently.</div>';
-        return;
-    }
-    current.forEach(b => container.appendChild(createBookCard(b)));
+    
+    // 2. Recently Finished (Read, sorted by dateRead DESC, max 12)
+    const recentlyFinished = books.filter(b => b.exclusiveShelf === 'read')
+        .sort((a, b) => {
+            const dA = a.dateRead ? new Date(a.dateRead.split(',')[0]).getTime() : 0;
+            const dB = b.dateRead ? new Date(b.dateRead.split(',')[0]).getTime() : 0;
+            return dB - dA;
+        })
+        .slice(0, 12);
+        
+    // 3. Up Next (To-read, sorted by importOrder/id DESC, max 6)
+    const upNext = books.filter(b => b.exclusiveShelf === 'to-read')
+        .sort((a, b) => (b.id || b.importOrder) - (a.id || a.importOrder))
+        .slice(0, 6);
+
+    // Helpers
+    const createSection = (title, bookList) => {
+        const titleEl = document.createElement('h3');
+        titleEl.className = "profile-section-title";
+        titleEl.textContent = title;
+        container.appendChild(titleEl);
+        
+        const grid = document.createElement('div');
+        grid.className = "book-grid";
+        if (bookList.length === 0) {
+            grid.innerHTML = `<div style="color:#666; font-size:0.9em; grid-column:1/-1;">None found.</div>`;
+        } else {
+            bookList.forEach(b => grid.appendChild(createBookCard(b)));
+        }
+        container.appendChild(grid);
+    };
+
+    createSection("Currently Reading", current);
+    createSection("Recently Finished", recentlyFinished);
+    createSection("Up Next (To Read)", upNext);
 }
 
 function renderFavourites() {
@@ -696,13 +749,19 @@ function renderFavourites() {
         container.innerHTML = '<div style="color:#666; grid-column:1/-1;">No favourites selected.</div>';
         return;
     }
-    favs.forEach(b => container.appendChild(createBookCard(b)));
+    favs.forEach(b => container.appendChild(createBookCard(b, true)));
 }
 
-function createBookCard(b) {
+function createBookCard(b, isFavSection = false) {
     const div = document.createElement("div");
     div.className = "book-card";
-    div.innerHTML = `<div class="book-title">${b.title}</div><div class="book-author">${b.author}</div>`;
+    // Check if we show Series Name or Title
+    let displayTitle = b.title;
+    if (isFavSection && b.showSeriesInFav && b.series) {
+        displayTitle = b.series;
+    }
+    
+    div.innerHTML = `<div class="book-title">${displayTitle}</div><div class="book-author">${b.author}</div>`;
     div.addEventListener("click", () => openEditModal(b));
     return div;
 }
@@ -866,10 +925,12 @@ document.getElementById("clearStorage").addEventListener("click", () => {
     }
 });
 
-// Initial Render
+// Initial Render - Explicitly render table immediately
 const savedTab = localStorage.getItem(TAB_KEY);
 if (savedTab) switchTab(savedTab);
 else switchTab("list");
+// Ensure table is rendered even if switchTab doesn't fire due to some race condition
+renderTable();
 
 </script>
 </body>
