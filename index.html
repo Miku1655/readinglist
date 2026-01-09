@@ -256,18 +256,6 @@ const db = firebase.database();
 const auth = firebase.auth();
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
     .catch(err => console.error("Auth persistence error:", err));
-
-	// Handle redirect result (important for mobile)
-auth.getRedirectResult()
-    .then(result => {
-        if (result.credential) {
-            // Sign-in successful (will trigger onAuthStateChanged)
-        }
-    })
-    .catch(error => {
-        console.error("Redirect auth error:", error);
-        alert("Sign-in failed: " + error.message);
-    });
 	
 let currentUser = null;
 let dbRef = null;
@@ -276,6 +264,7 @@ let isApplyingRemote = false;
 // Sign in/out UI
 document.getElementById("signInBtn").addEventListener("click", async () => {
     const provider = new firebase.auth.GoogleAuthProvider();
+	provider.setCustomParameters({ prompt: 'select_account' });
 	document.getElementById("signInBtn").disabled = true;
     auth.signInWithRedirect(provider);
 });
@@ -1314,6 +1303,7 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
 
 
