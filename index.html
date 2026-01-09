@@ -346,32 +346,26 @@ auth.onAuthStateChanged(user => {
         document.getElementById("signOutBtn").style.display = "inline-block";
         document.getElementById("syncStatus").textContent = `Signed in: ${user.displayName || user.email}`;
         
-        dbRef = db.ref("users/" + user.uid);
-        
-        // 1. One-time fetch
-        loadFromFirebase(); 
+        if (user) {
+    document.getElementById("signInBtn").style.display = "none";
+    document.getElementById("signOutBtn").style.display = "inline-block";
+    document.getElementById("syncStatus").textContent = `Signed in: ${user.displayName || user.email}`;
+    
+    // Load Firestore data once
+    const docRef = firestore.collection("users").doc(user.uid);
+    docRef.get().then(doc => {
+        if (!doc.exists) return;
 
-        // 2. Real-time listener
-        dbRef.on("value", snapshot => {
-            if (isApplyingRemote) return;
-            const data = snapshot.val();
-            if (!data) return;
+        const data = doc.data();
+        if (data[STORAGE_KEY]) localStorage.setItem(STORAGE_KEY, data[STORAGE_KEY]);
+        if (data[PROFILE_KEY]) localStorage.setItem(PROFILE_KEY, data[PROFILE_KEY]);
+        if (data[GOALS_KEY]) localStorage.setItem(GOALS_KEY, data[GOALS_KEY]);
+        if (data[SHELF_COLORS_KEY]) localStorage.setItem(SHELF_COLORS_KEY, data[SHELF_COLORS_KEY]);
 
-            isApplyingRemote = true;
-            
-            // Update local storage from cloud
-            if (data[STORAGE_KEY]) localStorage.setItem(STORAGE_KEY, data[STORAGE_KEY]);
-            if (data[PROFILE_KEY]) localStorage.setItem(PROFILE_KEY, data[PROFILE_KEY]);
-            if (data[GOALS_KEY]) localStorage.setItem(GOALS_KEY, data[GOALS_KEY]);
-            if (data[SHELF_COLORS_KEY]) localStorage.setItem(SHELF_COLORS_KEY, data[SHELF_COLORS_KEY]);
-            
-            // Reload into memory
-            loadAllFromStorage();
-            
-            // Render
-            renderCurrentTab();
-            isApplyingRemote = false;
-        });
+        loadAllFromStorage();
+        renderCurrentTab();
+    });
+}
 
     } else {
         // Logged Out
@@ -1010,6 +1004,7 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+
 
 
 
