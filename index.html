@@ -203,7 +203,7 @@ button.danger:hover {
 <h3>Manage Shelves</h3>
 <div id="shelfManager"></div>
 <hr style="border:1px solid #333; margin:16px 0;">
-Version 1.0.0.4
+Version 1.0.0.5
 </section>
 <!-- Edit Book Modal -->
 <div id="editModal" style="
@@ -342,11 +342,10 @@ auth.onAuthStateChanged(user => {
 
 function saveToFirebase() {
     if (!currentUser || !dbRef) {
-        alert("Not signed in.");
+        showPopup("Not signed in.", false);
         return;
     }
 
-    // Make sure latest local books are saved first
     saveToStorage();
 
     const data = {
@@ -359,10 +358,29 @@ function saveToFirebase() {
     };
 
     dbRef.set(data)
-        .then(() => {
-            alert("Saved to cloud.");
-        })
-        .catch(err => alert("Save failed: " + err.message));
+        .then(() => showPopup("Saved to cloud!", true))
+        .catch(err => showPopup("Save failed: " + err.message, false));
+}
+
+// Minimal popup helper
+function showPopup(message, success = true) {
+    const popup = document.createElement("div");
+    popup.textContent = message;
+    popup.style.cssText = `
+        position:fixed;
+        bottom:20px;
+        left:50%;
+        transform:translateX(-50%);
+        background:${success ? "#2c8" : "#c22"};
+        color:#111;
+        padding:12px 20px;
+        border-radius:6px;
+        font-size:0.95em;
+        z-index:10000;
+        box-shadow:0 2px 8px rgba(0,0,0,0.5);
+    `;
+    document.body.appendChild(popup);
+    setTimeout(() => popup.remove(), 3000);
 }
 
 
@@ -1344,6 +1362,7 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
 
 
