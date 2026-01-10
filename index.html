@@ -203,7 +203,7 @@ button.danger:hover {
 <h3>Manage Shelves</h3>
 <div id="shelfManager"></div>
 <hr style="border:1px solid #333; margin:16px 0;">
-Version 1.0
+Version 1.0.0.1
 </section>
 <!-- Edit Book Modal -->
 <div id="editModal" style="
@@ -251,7 +251,6 @@ Version 1.0
 const firebaseConfig = {
   apiKey: "AIzaSyA8UlXHK1HPSeKAuCfEquonyjnT24ZWjcA",
   authDomain: "readinglist-75c4a.firebaseapp.com",
-  databaseURL: "https://readinglist-75c4a-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "readinglist-75c4a",
   storageBucket: "readinglist-75c4a.firebasestorage.app",
   messagingSenderId: "717466374536",
@@ -388,20 +387,21 @@ function loadFromStorage() {
 const originalSaveToStorage = saveToStorage;
 saveToStorage = function() {
     originalSaveToStorage();
-    saveToFirebase();
 };
 
-function saveProfile() {
+function saveProfile(syncCloud = false) {
+    profile.nick = document.getElementById("profileNick").value.trim();
+    profile.bio = document.getElementById("profileBio").value.trim();
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-    saveToFirebase();
+    if (syncCloud) saveToFirebase(); // only if explicitly requested
 }
+
 
 // Override other saves that directly touch localStorage
 // (goals, shelf colors, show numbers, tab — they already call saveToFirebase via hooks or add below)
 document.getElementById("saveGoal").addEventListener("click", () => {
     // ... existing code ...
     localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
-    saveToFirebase(); // add this line
 });
 // Add saveToFirebase() at end of shelf color input, showNumbers change, etc. if needed
 // But most are covered by saveToStorage or direct hooks above
@@ -492,7 +492,6 @@ function switchTab(name) {
         renderFavourites();
     }
     localStorage.setItem(TAB_KEY, name);
-	saveToFirebase();
 }
 
 /* Controls */
@@ -503,7 +502,6 @@ document.getElementById("shelfFilter").addEventListener("change", renderTable);
 document.getElementById("showNumbers").addEventListener("change", () => {
     localStorage.setItem(SHOW_NUM_KEY, document.getElementById("showNumbers").checked);
     renderTable();
-    saveToFirebase();
 });
 document.getElementById("searchInput").addEventListener("input", renderTable); // moved outside renderTable
 
@@ -563,11 +561,9 @@ let profileSaveTimeout = null;
 
 function scheduleProfileSave() {
     clearTimeout(profileSaveTimeout);
-    profileSaveTimeout = setTimeout(() => {
-        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-        saveToFirebase();
-    }, 500);
+    profileSaveTimeout = setTimeout(() => saveProfile(), 500);
 }
+
 	
 /* Sorting */
 document.querySelectorAll("th").forEach(th =>
@@ -997,7 +993,6 @@ function renderShelfManager() {
     shelfColors[sh] = colorInput.value;
     localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
     renderTable();
-    saveToFirebase();
 });
     });
 }
@@ -1122,14 +1117,6 @@ document.getElementById("saveEdit").addEventListener("click", () => {
 document.getElementById("addBook").addEventListener("click", () => openEditModal(null));
 
 /* Profile */
-function saveProfile() {
-    // Update from inputs if needed (for live typing)
-    profile.nick = document.getElementById("profileNick").value.trim();
-    profile.bio = document.getElementById("profileBio").value.trim();
-    // Save full profile (including picture and favourites)
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-    saveToFirebase();
-}
 
 // Live update for nick and bio as you type
 document.getElementById("profileNick").addEventListener("input", saveProfile);
@@ -1330,4 +1317,3 @@ renderFavourites();
 </script>
 </body>
 </html>
-
