@@ -412,24 +412,63 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
         .then(snap => {
             const data = snap.val();
             if (!data) return alert("No data in cloud");
+
+            // Load books from cloud
             let loadedBooks = data.books || [];
             if (!Array.isArray(loadedBooks)) loadedBooks = Object.values(loadedBooks);
             books = loadedBooks;
-            loadLocalData();
+
+            // === Migration / backfill (copied from loadLocalData, but without localStorage load) ===
+            let maxOrder = 0;
+            books.forEach(b => {
+                if (!b.importOrder) b.importOrder = nextImportOrder++;
+                maxOrder = Math.max(maxOrder, b.importOrder ?? 0);
+
+                // Migrate old fields
+                if (b.lastModified != null) {
+                    if (b.bumpTime == null) b.bumpTime = b.lastModified;
+                    delete b.lastModified;
+                }
+
+                // Backfill missing dates
+                if (b.exclusiveShelf === "currently-reading" && b.dateStarted == null) {
+                    b.dateStarted = b.dateAdded ?? 0;
+                }
+                if (b.exclusiveShelf === "read" && b.lastFinished == null) {
+                    const ts = getLatestReadTimestamp(b);
+                    if (ts > 0) b.lastFinished = ts;
+                }
+            });
+            nextImportOrder = maxOrder + 1;
+
+            // Clean up favourites (in case book IDs changed or books removed)
             profile = data.profile || { favourites: [], favouriteSeries: [] };
+            profile.favourites = (profile.favourites || []).filter(id => 
+                typeof id === 'number' && books.some(b => b.importOrder === id)
+            );
+
+            // Load other data from cloud
             goals = data.goals || {};
             shelfColors = data.shelfColors || {};
             const settings = data.settings || {};
             document.getElementById("showNumbers").checked = settings.showNumbers ?? true;
+
+            // Update profile UI
             document.getElementById("profileNick").value = profile.nick || "";
             document.getElementById("profileBio").value = profile.bio || "";
             if (profile.picture) document.getElementById("profilePic").src = profile.picture;
+
+            // Save everything to localStorage
             saveBooksToLocal();
             localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
             localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
             localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
             localStorage.setItem(SHOW_NUM_KEY, document.getElementById("showNumbers").checked);
+
+            // Re-render everything
             renderAll();
+            loadGoalsForYear(); // in case goals tab is open
+
             alert("Loaded from cloud successfully!");
         })
         .catch(err => alert("Load failed: " + err.message));
@@ -1154,3 +1193,4 @@ loadGoalsForYear();
 </script>
 </body>
 </html>
+
