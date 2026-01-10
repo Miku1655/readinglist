@@ -138,7 +138,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.0.5 (fixed editing, profile display, cloud load robustness)
+    Version 1.0.6 (fixed chart error on load, profile always updates)
 </section>
 
 <!-- Edit Modal -->
@@ -174,7 +174,7 @@ button.danger:hover { background-color: #a83838; }
 </div>
 
 <script>
-// Firebase config
+// Firebase config (with your databaseURL)
 const firebaseConfig = {
   apiKey: "AIzaSyA8UlXHK1HPSeKAuCfEquonyjnT24ZWjcA",
   authDomain: "readinglist-75c4a.firebaseapp.com",
@@ -194,7 +194,7 @@ let userRef = null;
 let editingBook = null;
 let books = [];
 let nextImportOrder = 1;
-let sortState = { column: null, direction: 1 }; // null = recent (lastModified / importOrder)
+let sortState = { column: null, direction: 1 };
 
 const STORAGE_KEY = "reading_list_data";
 const SHOW_NUM_KEY = "reading_list_show_numbers";
@@ -213,7 +213,7 @@ const yearGoalInput = document.getElementById("yearGoal");
 const yearBooksInput = document.getElementById("yearBooksGoal");
 const cloudButtons = document.getElementById("cloudButtons");
 
-// Auth state listener
+// Auth listener
 auth.onAuthStateChanged(user => {
     currentUser = user;
     const syncStatus = document.getElementById("syncStatus");
@@ -240,22 +240,31 @@ auth.onAuthStateChanged(user => {
     renderAll();
 });
 
-// Load from localStorage
+// Load local data
 function loadLocalData() {
     const savedBooks = localStorage.getItem(STORAGE_KEY);
     if (savedBooks) {
-        books = JSON.parse(savedBooks);
+        try {
+            books = JSON.parse(savedBooks);
+        } catch {
+            books = [];
+        }
     } else {
         books = [];
     }
 
-    // Ensure every book has a unique importOrder
+    // Ensure stable importOrder
+    let maxOrder = 0;
     books.forEach(b => {
-        if (b.importOrder == null) b.importOrder = nextImportOrder++;
+        if (!b.importOrder) b.importOrder = nextImportOrder++;
+        maxOrder = Math.max(maxOrder, b.importOrder);
     });
-    nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder || 0), 0) + 1;
+    nextImportOrder = maxOrder + 1;
 
     profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || `{ "favourites": [] }`);
+    // Clean invalid favourites
+    profile.favourites = profile.favourites.filter(id => books.some(b => b.importOrder === id));
+
     goals = JSON.parse(localStorage.getItem(GOALS_KEY) || "{}");
     shelfColors = JSON.parse(localStorage.getItem(SHELF_COLORS_KEY) || "{}");
     document.getElementById("showNumbers").checked = JSON.parse(localStorage.getItem(SHOW_NUM_KEY) || "true");
@@ -267,12 +276,11 @@ function loadLocalData() {
     loadGoalsForYear();
 }
 
-// Save books to localStorage
 function saveBooksToLocal() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
 }
 
-// Manual cloud save
+// Cloud save
 document.getElementById("saveCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite cloud data with current local data?")) return;
@@ -287,10 +295,10 @@ document.getElementById("saveCloudBtn").addEventListener("click", () => {
 
     userRef.set(dataToSave)
         .then(() => alert("Saved to cloud successfully!"))
-        .catch(err => alert("Save failed: " + err.message + "\n\nMost common cause: Firebase Database rules do not allow write.\nGo to Firebase console → Realtime Database → Rules and set:\n\n{\n  \"rules\": {\n    \"users\": {\n      \"$uid\": {\n        \".read\": \"$uid === auth.uid\",\n        \".write\": \"$uid === auth.uid\"\n      }\n    }\n  }\n}"));
+        .catch(err => alert("Save failed: " + err.message));
 });
 
-// Manual cloud load
+// Cloud load
 document.getElementById("loadCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite local data with cloud data? This cannot be undone.")) return;
@@ -298,32 +306,35 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
     userRef.once("value")
         .then(snap => {
             const data = snap.val();
-            if (!data) return alert("No data found in cloud");
+            if (!data) return alert("No data in cloud");
 
             let loadedBooks = data.books || [];
             if (!Array.isArray(loadedBooks)) loadedBooks = Object.values(loadedBooks);
 
-            books = loadedBooks.filter(b => b && b.title); // clean invalid entries
+            books = loadedBooks;
 
-            // Ensure importOrder
+            // Ensure stable importOrder
+            let maxOrder = 0;
             books.forEach(b => {
-                if (b.importOrder == null) b.importOrder = nextImportOrder++;
+                if (!b.importOrder) b.importOrder = nextImportOrder++;
+                maxOrder = Math.max(maxOrder, b.importOrder);
             });
-            nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder || 0), 0) + 1;
+            nextImportOrder = maxOrder + 1;
 
             profile = data.profile || { favourites: [] };
+            // Clean invalid favourites after books loaded
+            profile.favourites = profile.favourites.filter(id => books.some(b => b.importOrder === id));
+
             goals = data.goals || {};
             shelfColors = data.shelfColors || {};
             const settings = data.settings || {};
             document.getElementById("showNumbers").checked = settings.showNumbers ?? true;
 
-            // Update profile UI
             document.getElementById("profileNick").value = profile.nick || "";
             document.getElementById("profileBio").value = profile.bio || "";
             if (profile.picture) document.getElementById("profilePic").src = profile.picture;
             loadGoalsForYear();
 
-            // Save to localStorage
             saveBooksToLocal();
             localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
             localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
@@ -336,7 +347,7 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
         .catch(err => alert("Load failed: " + err.message));
 });
 
-// UI functions
+// Tab switching
 function switchTab(name) {
     document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
     document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === "tab-" + name));
@@ -351,16 +362,18 @@ function switchTab(name) {
     }
 }
 
+// Render everything
 function renderAll() {
     populateShelfFilter();
     renderTable();
-    renderStats();
+    renderStats(); // always, safe
     renderProfileStats();
     renderRecentBooks();
     renderFavourites();
-    if (document.querySelector('.tab.active').dataset.tab === "options") renderShelfManager();
+    if (document.querySelector('.tab.active')?.dataset.tab === "options") renderShelfManager();
 }
 
+// Modal
 function openEditModal(book = null) {
     editingBook = book;
     document.getElementById("editTitle").value = book?.title || "";
@@ -383,246 +396,58 @@ function closeEditModal() {
     document.getElementById("editModal").style.display = "none";
 }
 
-function getLatestReadTimestamp(book) {
-    if (!book.dateRead || book.exclusiveShelf !== "read") return 0;
-    const times = book.dateRead.split(",").map(d => new Date(d.trim()).getTime()).filter(t => !isNaN(t));
-    return times.length ? Math.max(...times) : 0;
-}
+// Save edit/add
+document.getElementById("saveEdit").addEventListener("click", () => {
+    const now = Date.now();
+    const data = {
+        title: document.getElementById("editTitle").value.trim(),
+        author: document.getElementById("editAuthor").value.trim(),
+        series: document.getElementById("editSeries").value.trim(),
+        shelves: document.getElementById("editShelves").value.split(",").map(s => s.trim()).filter(Boolean),
+        exclusiveShelf: document.getElementById("editExclusiveShelf").value,
+        pages: Number(document.getElementById("editPages").value) || 0,
+        year: Number(document.getElementById("editYear").value) || null,
+        dateRead: document.getElementById("editDateRead").value.trim(),
+        readCount: Number(document.getElementById("editReadCount").value) || 1,
+        rating: Number(document.getElementById("editRating").value) || 0,
+        notes: document.getElementById("editNotes").value.trim(),
+        lastModified: now
+    };
 
-function createBookCard(book) {
-    const div = document.createElement("div");
-    div.className = "book-card";
-    div.innerHTML = `
-        <strong class="profile-book-title">${book.title || "No title"}</strong>
-        <span class="profile-book-author">${book.author || ""}</span>
-    `;
-    div.title = `${book.title} — ${book.author}`;
-    div.addEventListener("click", () => openEditModal(book));
-    return div;
-}
-
-let notePopup = null;
-function createNotePopup() {
-    notePopup = document.createElement("div");
-    notePopup.style.position = "absolute";
-    notePopup.style.background = "#222";
-    notePopup.style.color = "#eee";
-    notePopup.style.padding = "8px";
-    notePopup.style.border = "1px solid #444";
-    notePopup.style.borderRadius = "4px";
-    notePopup.style.zIndex = "3000";
-    notePopup.style.display = "none";
-    notePopup.style.maxWidth = "300px";
-    document.body.appendChild(notePopup);
-    return notePopup;
-}
-
-function showNotePopup(popup, text) {
-    popup.textContent = text;
-    popup.style.display = "block";
-    document.addEventListener("mousemove", moveNotePopup);
-}
-
-function hideNotePopup(popup) {
-    popup.style.display = "none";
-    document.removeEventListener("mousemove", moveNotePopup);
-}
-
-function moveNotePopup(e) {
-    if (!notePopup) return;
-    notePopup.style.left = (e.clientX + 12) + "px";
-    notePopup.style.top = (e.clientY + 12) + "px";
-}
-
-function renderTable() {
-    const showNumbers = document.getElementById("showNumbers").checked;
-    const filter = document.getElementById("shelfFilter").value;
-    const tbody = document.getElementById("tableBody");
-    tbody.innerHTML = "";
-
-    let list = books.slice();
-
-    if (filter !== "all") {
-        list = list.filter(b => b.exclusiveShelf === filter || (b.shelves || []).includes(filter));
-    }
-
-    const query = document.getElementById("searchInput").value.trim();
-    if (query) list = filterBooksByQuery(list, query);
-
-    // Sorting
-    if (sortState.column) {
-        list.sort((a, b) => compare(a, b, sortState.column) * sortState.direction);
+    if (editingBook) {
+        Object.assign(editingBook, data);
     } else {
-        // Default recent: lastModified desc, fallback to importOrder desc
-        list.sort((a, b) => {
-            const ma = a.lastModified ?? a.importOrder ?? 0;
-            const mb = b.lastModified ?? b.importOrder ?? 0;
-            return mb - ma;
-        });
+        data.importOrder = nextImportOrder++;
+        books.unshift(data);
     }
 
-    list.forEach((book, idx) => {
-        const tr = document.createElement("tr");
-        const shelvesDisplay = [book.exclusiveShelf, ...(book.shelves || [])].filter(Boolean)
-            .map(sh => `<span style="background:${shelfColors[sh] || '#888'}; padding:2px 4px; margin-right:2px; border-radius:3px;">${sh}</span>`)
-            .join("");
-
-        tr.innerHTML = `
-            <td>${showNumbers ? (idx + 1) + ". " : ""}${book.title || ""}${book.notes ? ' <span class="noteIcon" style="cursor:help;color:#888;">📝</span>' : ''}</td>
-            <td>${book.rating || "-"}</td>
-            <td>${book.author || ""}</td>
-            <td>${shelvesDisplay}</td>
-            <td>${book.pages || "-"}</td>
-            <td>${book.year || "-"}</td>
-            <td>${book.dateRead || "-"}</td>
-            <td>${book.readCount || "-"}</td>
-            <td><button class="editBtn" style="padding:2px 6px;">✎</button></td>
-        `;
-        tbody.appendChild(tr);
-
-        tr.querySelector(".editBtn").addEventListener("click", () => openEditModal(book));
-
-        if (book.notes) {
-            const icon = tr.querySelector(".noteIcon");
-            const popup = notePopup || createNotePopup();
-            icon.addEventListener("mouseenter", () => showNotePopup(popup, book.notes));
-            icon.addEventListener("mouseleave", () => hideNotePopup(popup));
-        }
-    });
-}
-
-function compare(a, b, col) {
-    let av = a[col] ?? "";
-    let bv = b[col] ?? "";
-    if (col === "shelves") {
-        av = [a.exclusiveShelf, ...(a.shelves || [])].join(", ");
-        bv = [b.exclusiveShelf, ...(b.shelves || [])].join(", ");
-    }
-    if (col === "dateRead") {
-        return getLatestReadTimestamp(a) - getLatestReadTimestamp(b);
-    }
-    if (typeof av === "number") return av - bv;
-    return String(av).localeCompare(String(bv));
-}
-
-function handleSort(col) {
-    if (sortState.column === col) {
-        sortState.direction *= -1;
+    const bookId = editingBook ? editingBook.importOrder : data.importOrder;
+    const isFav = document.getElementById("editFavourite").checked;
+    if (isFav) {
+        if (!profile.favourites.includes(bookId)) profile.favourites.push(bookId);
     } else {
-        sortState.column = col;
-        sortState.direction = 1;
+        profile.favourites = profile.favourites.filter(id => id !== bookId);
     }
-    updateSortIndicators();
-    renderTable();
-}
 
-function updateSortIndicators() {
-    document.querySelectorAll(".sort").forEach(s => s.textContent = "");
-    if (sortState.column) {
-        const el = document.querySelector(`th[data-col="${sortState.column}"] .sort`);
-        if (el) el.textContent = sortState.direction > 0 ? "▲" : "▼";
-    }
-}
-
-// Sort by Recent resets to recent order
-document.getElementById("sortRecent").addEventListener("click", () => {
-    sortState = { column: null, direction: 1 };
-    updateSortIndicators();
-    renderTable();
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    saveBooksToLocal();
+    renderAll();
+    closeEditModal();
 });
 
-function populateShelfFilter() {
-    const select = document.getElementById("shelfFilter");
-    select.innerHTML = '<option value="all">all</option>';
-    const set = new Set();
-    books.forEach(b => {
-        if (b.exclusiveShelf) set.add(b.exclusiveShelf);
-        (b.shelves || []).forEach(s => set.add(s));
-    });
-    [...set].sort().forEach(s => {
-        const opt = document.createElement("option");
-        opt.value = s;
-        opt.textContent = s;
-        select.appendChild(opt);
-    });
-}
-
-function filterBooksByQuery(list, query) {
-    const terms = query.toLowerCase().match(/\S+/g) || [];
-    return list.filter(book => {
-        let match = true;
-        for (const term of terms) {
-            let m;
-            if ((m = term.match(/^status([!=]?=)(.+)$/))) {
-                const val = m[2];
-                const eq = m[1] === "=" || m[1] === "==";
-                match = match && (eq ? book.exclusiveShelf?.toLowerCase() === val : book.exclusiveShelf?.toLowerCase() !== val);
-            } else if ((m = term.match(/^pages([<>=!]+)(\d+)$/))) {
-                const op = m[1], num = Number(m[2]);
-                const p = book.pages || 0;
-                if (op === ">") match = match && p > num;
-                else if (op === ">=") match = match && p >= num;
-                else if (op === "<") match = match && p < num;
-                else if (op === "<=") match = match && p <= num;
-                else if (op === "=") match = match && p === num;
-                else if (op === "!=") match = match && p !== num;
-            } else if ((m = term.match(/^year([<>=!]+)(\d{4})$/))) {
-                const op = m[1], num = Number(m[2]);
-                const y = book.year;
-                if (op === ">") match = match && y > num;
-                else if (op === ">=") match = match && y >= num;
-                else if (op === "<") match = match && y < num;
-                else if (op === "<=") match = match && y <= num;
-                else if (op === "=") match = match && y === num;
-                else if (op === "!=") match = match && y !== num;
-            } else if ((m = term.match(/^count([<>=!]+)(\d+)$/))) {
-                const op = m[1], num = Number(m[2]);
-                const c = book.readCount || 1;
-                if (op === ">") match = match && c > num;
-                else if (op === ">=") match = match && c >= num;
-                else if (op === "<") match = match && c < num;
-                else if (op === "<=") match = match && c <= num;
-                else if (op === "=") match = match && c === num;
-                else if (op === "!=") match = match && c !== num;
-            } else if ((m = term.match(/^date([<>=!]+)(\d{4})$/))) {
-                const op = m[1], num = Number(m[2]);
-                const dates = (book.dateRead || "").split(",").map(d => d.trim()).filter(Boolean);
-                const firstYear = dates.length ? new Date(dates[0]).getFullYear() : null;
-                if (firstYear === null) { match = false; continue; }
-                if (op === ">") match = match && firstYear > num;
-                else if (op === ">=") match = match && firstYear >= num;
-                else if (op === "<") match = match && firstYear < num;
-                else if (op === "<=") match = match && firstYear <= num;
-                else if (op === "=") match = match && firstYear === num;
-                else if (op === "!=") match = match && firstYear !== num;
-            } else {
-                const text = `${book.title} ${book.author} ${book.series || ""}`.toLowerCase();
-                match = match && text.includes(term);
-            }
-            if (!match) return false;
-        }
-        return match;
-    });
-}
-
-function calculatePerYear() {
-    const perYear = {};
-    books.forEach(b => {
-        if (b.exclusiveShelf !== "read" || !b.dateRead) return;
-        b.dateRead.split(",").map(d => d.trim()).filter(Boolean).forEach(dateStr => {
-            const dt = new Date(dateStr);
-            if (isNaN(dt)) return;
-            const y = dt.getFullYear();
-            perYear[y] = perYear[y] || { books: 0, pages: 0 };
-            perYear[y].books++;
-            perYear[y].pages += b.pages || 0;
-        });
-    });
-    return perYear;
-}
-
+// Stats with safe chart destroy
 function renderStats() {
     const container = document.getElementById("stats");
+    const ctx = document.getElementById("statsChart").getContext("2d");
+
+    // Safe destroy previous chart
+    if (window.statsChart) {
+        if (typeof window.statsChart.destroy === 'function') {
+            window.statsChart.destroy();
+        }
+        window.statsChart = null;
+    }
+
     if (!books.length) {
         container.innerHTML = "<p>No books yet.</p>";
         return;
@@ -652,12 +477,10 @@ function renderStats() {
         <div class="stats-year">By year:<br>${Object.keys(perYear).sort((a,b)=>a-b).map(y => `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages`).join("<br>") || "none"}</div>
     `;
 
-    const ctx = document.getElementById("statsChart").getContext("2d");
     const labels = Object.keys(perYear).sort();
     const booksData = labels.map(y => perYear[y].books);
     const pagesData = labels.map(y => perYear[y].pages);
 
-    if (window.statsChart) window.statsChart.destroy();
     window.statsChart = new Chart(ctx, {
         type: 'bar',
         data: { labels, datasets: [
@@ -1026,7 +849,7 @@ function importJSON(text) {
     renderAll();
 }
 
-// Initial load
+// Initial
 loadLocalData();
 const savedTab = localStorage.getItem(TAB_KEY) || "list";
 switchTab(savedTab);
@@ -1035,4 +858,3 @@ renderAll();
 </script>
 </body>
 </html>
-
