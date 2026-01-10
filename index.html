@@ -147,7 +147,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.3.1 – added missing render functions, fixed profile card clicks reliably
+    Version 1.3.2 – fixed stats chart destroy error, improved recent sort priority (dateRead > dateStarted > dateAdded, bump overrides, no dates at bottom)
 </section>
 <!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
@@ -230,13 +230,9 @@ function getLatestReadTimestamp(book) {
     return times.length ? Math.max(...times) : 0;
 }
 function getActivityTimestamp(book) {
-    const times = [
-        book.lastFinished ?? 0,
-        book.dateStarted ?? 0,
-        book.bumpTime ?? 0,
-        book.dateAdded ?? 0
-    ];
-    return Math.max(...times);
+    const primary = book.lastFinished ?? book.dateStarted ?? book.dateAdded ?? Number.NEGATIVE_INFINITY;
+    const bump = book.bumpTime ?? Number.NEGATIVE_INFINITY;
+    return Math.max(primary, bump);
 }
 function createBookCard(book) {
     const div = document.createElement("div");
@@ -247,7 +243,7 @@ function createBookCard(book) {
         <span class="profile-book-author">${book.author || ""}</span>
     `;
     div.title = `${book.title} — ${book.author}`;
-    div.addEventListener("click", () => openEditModal(book)); // Removed draggedElement check for reliable clicks
+    div.addEventListener("click", () => openEditModal(book));
     return div;
 }
 function createSeriesCard(series) {
@@ -673,7 +669,7 @@ function calculatePerYear() {
     return perYear;
 }
 
-// Missing render functions
+// Render functions
 function renderProfileStats() {
     const container = document.getElementById("profileStats");
     const readBooks = books.filter(b => b.exclusiveShelf === "read");
@@ -733,12 +729,12 @@ function renderShelfManager() {
         });
     });
 }
-
-// Stats rendering
 function renderStats() {
     const container = document.getElementById("stats");
     const ctx = document.getElementById("statsChart").getContext("2d");
-    if (window.statsChart) window.statsChart.destroy();
+    if (window.statsChart) {
+        window.statsChart.destroy();
+    }
     if (!books.length) {
         container.innerHTML = "<p>No books yet.</p>";
         return;
@@ -790,8 +786,6 @@ function renderStats() {
         }
     });
 }
-
-// Profile recent & favourites
 function renderRecentBooks() {
     const container = document.getElementById("recentBooksContainer");
     container.innerHTML = "";
