@@ -319,11 +319,21 @@ auth.onAuthStateChanged(user => {
             if (isApplyingRemote) return;
 
             const data = snapshot.val();
-            if (!data) return;
-
-            isApplyingRemote = true;
-            Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
-            loadFromStorage();
+			if (!data) return;
+			
+			const localUpdated = Number(localStorage.getItem("lastUpdated") || 0);
+			if (data.lastUpdated && data.lastUpdated < localUpdated) return;
+			
+			isApplyingRemote = true;
+			
+			Object.keys(data).forEach(key => {
+			    if (key !== "lastUpdated") {
+			        localStorage.setItem(key, data[key]);
+			    }
+			});
+			localStorage.setItem("lastUpdated", data.lastUpdated || Date.now());
+			
+			loadFromStorage();
             renderTable();
             renderStats();
             
@@ -355,7 +365,11 @@ function saveToFirebase() {
         [SHOW_NUM_KEY]: localStorage.getItem(SHOW_NUM_KEY) || "true",
         [TAB_KEY]: localStorage.getItem(TAB_KEY) || "list"
     };
-    dbRef.set(data).catch(err => console.error("Sync error:", err));
+    dbRef.update({
+    ...data,
+    lastUpdated: Date.now()
+}).catch(err => console.error("Sync error:", err));
+
 }
 
 function loadFromFirebase() {
@@ -372,7 +386,10 @@ function loadFromFirebase() {
 }
 
 /* Storage */
-function saveToStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(books)); }
+function saveToStorage() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
+    localStorage.setItem("lastUpdated", Date.now());
+}
 function loadFromStorage() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) return;
@@ -1012,7 +1029,11 @@ goalYearInput.addEventListener("change", () => {
     loadGoalsForYear();
     renderStats();
 });
-loadFromStorage();
+	
+if (!currentUser) {
+    loadFromStorage();
+}
+	
 const savedTab = localStorage.getItem(TAB_KEY);
 if (savedTab) switchTab(savedTab);
 if (document.querySelector(".tab.active").dataset.tab === "stats") renderStats();
@@ -1325,5 +1346,6 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
 
