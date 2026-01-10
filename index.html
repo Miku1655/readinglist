@@ -61,6 +61,7 @@ button.danger:hover { background-color: #a83838; }
 .timeline-entry li { list-style: none; display: flex; gap: 16px; align-items: flex-start; margin-bottom: 8px; }
 .timeline-entry li img { flex-shrink: 0; width: 80px; height: auto; max-height: 120px; object-fit: contain; background: #1a1a1a; }
 .timeline-entry li div { flex: 1; }
+#coversCount { margin-top: 8px; font-size: 0.9em; color: #ccc; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -155,6 +156,7 @@ button.danger:hover { background-color: #a83838; }
     </div>
     <div id="coversSection">
         <h3>Covers Management</h3>
+		<p id="coversCount"></p>
         <label><input type="checkbox" id="showCoversTimeline"> Show book covers in Timeline tab</label><br><br>
         <button id="fetchAllCovers">Auto-fetch missing covers from Google Books</button><br><br>
         <button id="clearLocalCovers">Clear all local covers (irreversible)</button>
@@ -180,7 +182,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.5 – added cover support with separate cloud sync
+    Version 1.5.1 – covers counter, cover search filter, timeline cover toggle synced
 </section>
 <!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
@@ -464,6 +466,7 @@ function loadLocalData() {
     document.getElementById("profileBio").value = profile.bio || "";
     if (profile.picture) document.getElementById("profilePic").src = profile.picture;
     loadGoalsForYear();
+	updateCoversCount();
 }
 function saveBooksToLocal() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
@@ -500,7 +503,8 @@ document.getElementById("saveCloudBtn").addEventListener("click", () => {
         shelfColors: shelfColors,
         settings: { 
             showNumbers: document.getElementById("showNumbers").checked,
-            minAuthorBooks: minAuthorBooks
+            minAuthorBooks: minAuthorBooks,
+			showCoversTimeline: showCoversInTimeline
         }
     };
     userRef.set(dataToSave)
@@ -548,6 +552,9 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
             minAuthorBooks = settings.minAuthorBooks ?? 2;
             minAuthorBooksInput.value = minAuthorBooks;
             localStorage.setItem(MIN_AUTHOR_BOOKS_KEY, minAuthorBooks);
+			showCoversInTimeline = settings.showCoversTimeline ?? false;
+			document.getElementById("showCoversTimeline").checked = showCoversInTimeline;
+            localStorage.setItem(SHOW_COVERS_TIMELINE_KEY, JSON.stringify(showCoversInTimeline));
             document.getElementById("profileNick").value = profile.nick || "";
             document.getElementById("profileBio").value = profile.bio || "";
             if (profile.picture) document.getElementById("profilePic").src = profile.picture;
@@ -632,12 +639,20 @@ document.getElementById("clearLocalCovers").addEventListener("click", () => {
     alert("All local covers cleared.");
 });
 
+// New: covers counter
+function updateCoversCount() {
+    const count = books.filter(b => b.coverUrl).length;
+    const total = books.length;
+    document.getElementById("coversCount").textContent = 
+        `${count} of ${total} books have covers (remote URLs – no disk space used by the app)`;
+}
+
 // Tab switching
 function switchTab(name) {
     document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
     document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === "tab-" + name));
     localStorage.setItem(TAB_KEY, name);
-    if (name === "options") renderShelfManager();
+    if (name === "options") { renderShelfManager(); updateCoversCount(); }
     if (name === "stats") renderStats();
     if (name === "profile") {
         renderProfileStats();
@@ -654,6 +669,7 @@ function renderAll() {
     renderRecentBooks();
     renderFavourites();
     renderTimeline();
+	updateCoversCount();
     if (document.querySelector('.tab.active')?.dataset.tab === "options") renderShelfManager();
 }
 
@@ -799,6 +815,10 @@ function filterBooksByQuery(list, query) {
                 else if (op === "<=") match = match && val <= num;
                 else if (op === "=" || op === "==") match = match && val === num;
                 else if (op === "!=") match = match && val !== num;
+			} else if ((m = term.match(/^cover(=|:) *(true|1|false|0)$/i))) {
+                const wantCover = m[2] === "true" || m[2] === "1";
+                const hasCover = !!book.coverUrl;
+                match = match && (hasCover === wantCover);
             } else if ((m = term.match(/^year([<>=!]+)?(-?\d+)$/i))) {
                 let op = m[1] || "=";
                 const num = Number(m[2]);
