@@ -203,7 +203,7 @@ button.danger:hover {
 <h3>Manage Shelves</h3>
 <div id="shelfManager"></div>
 <hr style="border:1px solid #333; margin:16px 0;">
-Version 1.0.0.3
+Version 1.0.0.4
 </section>
 <!-- Edit Book Modal -->
 <div id="editModal" style="
@@ -346,28 +346,38 @@ function saveToFirebase() {
         return;
     }
 
+    // Make sure latest local books are saved first
+    saveToStorage();
+
     const data = {
-        books: localStorage.getItem(STORAGE_KEY) || "[]",
-        profile: localStorage.getItem(PROFILE_KEY) || "{}",
-        goals: localStorage.getItem(GOALS_KEY) || "{}",
-        shelfColors: localStorage.getItem(SHELF_COLORS_KEY) || "{}",
-        showNumbers: localStorage.getItem(SHOW_NUM_KEY) || "true",
-        activeTab: localStorage.getItem(TAB_KEY) || "list"
+        books: localStorage.getItem(STORAGE_KEY),
+        profile: localStorage.getItem(PROFILE_KEY),
+        goals: localStorage.getItem(GOALS_KEY),
+        shelfColors: localStorage.getItem(SHELF_COLORS_KEY),
+        showNumbers: localStorage.getItem(SHOW_NUM_KEY),
+        activeTab: localStorage.getItem(TAB_KEY)
     };
 
     dbRef.set(data)
-        .then(() => alert("Saved to cloud."))
+        .then(() => {
+            alert("Saved to cloud.");
+        })
         .catch(err => alert("Save failed: " + err.message));
 }
+
 
 
 function loadFromFirebase() {
     if (!currentUser || !dbRef) return;
 
-    dbRef.once("value").then(snapshot => {
+    // Remove previous listener if any
+    if (isApplyingRemote) dbRef.off();
+    
+    dbRef.on("value", snapshot => {
         const data = snapshot.val();
         if (!data) return;
 
+        isApplyingRemote = true;
         localStorage.setItem(STORAGE_KEY, data.books || "[]");
         localStorage.setItem(PROFILE_KEY, data.profile || "{}");
         localStorage.setItem(GOALS_KEY, data.goals || "{}");
@@ -381,6 +391,7 @@ function loadFromFirebase() {
         renderProfileStats();
         renderRecentBooks();
         renderFavourites();
+        isApplyingRemote = false;
     });
 }
 
@@ -1333,5 +1344,6 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
 
