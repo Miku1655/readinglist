@@ -138,7 +138,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.0.3 (manual cloud sync – full code)
+    Version 1.0.4 (fixed recent sort + cloud robustness)
 </section>
 
 <!-- Edit Modal -->
@@ -193,7 +193,7 @@ let userRef = null;
 let editingBook = null;
 let books = [];
 let nextImportOrder = 1;
-let sortState = { column: null, direction: 1 };
+let sortState = { column: null, direction: 1 }; // null column = recent (importOrder desc)
 
 const STORAGE_KEY = "reading_list_data";
 const SHOW_NUM_KEY = "reading_list_show_numbers";
@@ -202,9 +202,9 @@ const GOALS_KEY = "reading_goals_per_year";
 const SHELF_COLORS_KEY = "reading_shelf_colors";
 const PROFILE_KEY = "reading_list_profile";
 
-let shelfColors = JSON.parse(localStorage.getItem(SHELF_COLORS_KEY) || "{}");
-let goals = JSON.parse(localStorage.getItem(GOALS_KEY) || "{}");
-let profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || `{ "favourites": [] }`);
+let shelfColors = {};
+let goals = {};
+let profile = { favourites: [] };
 
 // DOM references
 const goalYearInput = document.getElementById("goalYear");
@@ -244,11 +244,10 @@ function loadLocalData() {
     const savedBooks = localStorage.getItem(STORAGE_KEY);
     if (savedBooks) {
         books = JSON.parse(savedBooks);
-        nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder ?? 0), 0) + 1;
     } else {
         books = [];
-        nextImportOrder = 1;
     }
+    nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder ?? 0), 0) + 1;
 
     profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || `{ "favourites": [] }`);
     goals = JSON.parse(localStorage.getItem(GOALS_KEY) || "{}");
@@ -282,7 +281,7 @@ document.getElementById("saveCloudBtn").addEventListener("click", () => {
 
     userRef.set(dataToSave)
         .then(() => alert("Saved to cloud successfully!"))
-        .catch(err => alert("Save failed: " + err.message));
+        .catch(err => alert("Save failed: " + err.message + "\nCheck Firebase rules – they must allow write for authenticated user."));
 });
 
 // Manual cloud load (overwrite local)
@@ -293,10 +292,19 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
     userRef.once("value")
         .then(snap => {
             const data = snap.val();
-            if (!data) return alert("No data in cloud");
+            if (!data || !data.books) return alert("No data found in cloud");
 
-            books = data.books || [];
-            nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder ?? 0), 0) + 1;
+            let loadedBooks = data.books;
+            if (!Array.isArray(loadedBooks)) {
+                loadedBooks = Object.values(loadedBooks);
+            }
+
+            books = loadedBooks.map(b => ({
+                ...b,
+                importOrder: b.importOrder ?? nextImportOrder++
+            }));
+
+            nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder || 0), 0) + 1;
 
             profile = data.profile || { favourites: [] };
             goals = data.goals || {};
@@ -304,13 +312,13 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
             const settings = data.settings || {};
             document.getElementById("showNumbers").checked = settings.showNumbers ?? true;
 
-            // Update UI fields
+            // Update UI
             document.getElementById("profileNick").value = profile.nick || "";
             document.getElementById("profileBio").value = profile.bio || "";
             if (profile.picture) document.getElementById("profilePic").src = profile.picture;
             loadGoalsForYear();
 
-            // Persist to localStorage
+            // Save to local
             saveBooksToLocal();
             localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
             localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
@@ -428,15 +436,21 @@ function renderTable() {
 
     let list = books.slice();
 
+    // Shelf filter
     if (filter !== "all") {
         list = list.filter(b => b.exclusiveShelf === filter || (b.shelves || []).includes(filter));
     }
 
+    // Search
     const query = document.getElementById("searchInput").value.trim();
     if (query) list = filterBooksByQuery(list, query);
 
+    // Sorting
     if (sortState.column) {
         list.sort((a, b) => compare(a, b, sortState.column) * sortState.direction);
+    } else {
+        // Default: most recent (highest importOrder) first
+        list.sort((a, b) => (b.importOrder || 0) - (a.importOrder || 0));
     }
 
     list.forEach((book, idx) => {
@@ -484,8 +498,9 @@ function compare(a, b, col) {
 }
 
 function handleSort(col) {
-    if (sortState.column === col) sortState.direction *= -1;
-    else {
+    if (sortState.column === col) {
+        sortState.direction *= -1;
+    } else {
         sortState.column = col;
         sortState.direction = 1;
     }
@@ -499,7 +514,16 @@ function updateSortIndicators() {
         const el = document.querySelector(`th[data-col="${sortState.column}"] .sort`);
         if (el) el.textContent = sortState.direction > 0 ? "▲" : "▼";
     }
+    // No indicator for recent sort (default)
 }
+
+// Sort by Recent button resets to default recent order
+document.getElementById("sortRecent").addEventListener("click", () => {
+    sortState = { column: null, direction: 1 };
+    updateSortIndicators();
+    renderTable();
+});
+
 
 function populateShelfFilter() {
     const select = document.getElementById("shelfFilter");
@@ -752,12 +776,6 @@ document.getElementById("addBook").addEventListener("click", () => openEditModal
 
 document.getElementById("searchInput").addEventListener("input", renderTable);
 document.getElementById("shelfFilter").addEventListener("change", renderTable);
-document.getElementById("sortRecent").addEventListener("click", () => {
-    sortState.column = "dateRead";
-    sortState.direction = -1;
-    updateSortIndicators();
-    renderTable();
-});
 document.querySelectorAll("th[data-col]").forEach(th => th.addEventListener("click", () => handleSort(th.dataset.col)));
 
 document.getElementById("fileInput").addEventListener("change", e => {
@@ -879,17 +897,18 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         notes: document.getElementById("editNotes").value.trim()
     };
 
-    let bookId;
     if (editingBook) {
+        // Bump edited book to top
+        editingBook.importOrder = nextImportOrder++;
         Object.assign(editingBook, data);
-        bookId = editingBook.importOrder;
     } else {
+        // New book
         data.importOrder = nextImportOrder++;
-        books.unshift(data);
-        bookId = data.importOrder;
+        books.push(data);
     }
 
     const isFav = document.getElementById("editFavourite").checked;
+    const bookId = editingBook ? editingBook.importOrder : data.importOrder;
     if (isFav) {
         if (!profile.favourites.includes(bookId)) profile.favourites.push(bookId);
     } else {
