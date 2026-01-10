@@ -205,7 +205,7 @@ button.danger:hover {
 <h3>Manage Shelves</h3>
 <div id="shelfManager"></div>
 <hr style="border:1px solid #333; margin:16px 0;">
-Version 1.0.0.7
+Version 1.0.0.9
 </section>
 <!-- Edit Book Modal -->
 <div id="editModal" style="
@@ -276,7 +276,7 @@ let currentUser = null;
 let userRef = null;
 let booksRef = null;
 let isApplyingRemote = false;
-
+let editingBook = null;
 let books = [];
 let nextImportOrder = 0;
 
@@ -320,7 +320,7 @@ auth.onAuthStateChanged(user => {
         signInBtn.style.display = "none";
         signUpBtn.style.display = "none";
         signOutBtn.style.display = "inline-block";
-        syncStatus.textContent = Signed in as ${user.email};
+        syncStatus.textContent = `Signed in as ${user.email}`;
     } else {
         signInBtn.style.display = "inline-block";
         signUpBtn.style.display = "inline-block";
@@ -395,7 +395,7 @@ function startBooksRealtimeListener() {
 // ============================================================================
 function saveBookToCloud(book, isNew = false) {
     if (!booksRef) return;
-    const key = book._firebaseKey || book_${book.importOrder};
+    const key = book._firebaseKey || `book_${book.importOrder}`;
     const data = { ...book, _updatedAt: firebase.database.ServerValue.TIMESTAMP };
 
     isApplyingRemote = true;
@@ -461,13 +461,36 @@ function saveProfile(syncCloud = false) {
 // EVENT LISTENERS – your original ones with cloud sync added
 // ============================================================================
 
+function openEditModal(book) {
+    editingBook = book; // this makes it available in save/remove handlers
+    document.getElementById("editTitle").value = book.title || "";
+    document.getElementById("editAuthor").value = book.author || "";
+    document.getElementById("editSeries").value = book.series || "";
+    document.getElementById("editShelves").value = (book.shelves || []).join(", ");
+    document.getElementById("editExclusiveShelf").value = book.exclusiveShelf || "read";
+    document.getElementById("editPages").value = book.pages || 0;
+    document.getElementById("editYear").value = book.year || "";
+    document.getElementById("editDateRead").value = book.dateRead || "";
+    document.getElementById("editReadCount").value = book.readCount || 1;
+    document.getElementById("editRating").value = book.rating || 0;
+    document.getElementById("editNotes").value = book.notes || "";
+    document.getElementById("editFavourite").checked = profile.favourites.includes(book.importOrder);
+    document.getElementById("editModal").style.display = "flex";
+}
+
+function closeEditModal() {
+    editingBook = null;
+    document.getElementById("editModal").style.display = "none";
+}
+
+	
 document.getElementById("saveGoal").addEventListener("click", () => {
     const pagesVal = Number(yearGoalInput.value) || 0;
     const booksVal = Number(yearBooksInput.value) || 0;
     const selectedYear = Number(goalYearInput.value);
     goals[selectedYear] = { pages: pagesVal, books: booksVal };
     localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
-    alert(Goals for ${selectedYear} saved: ${pagesVal} pages, ${booksVal} books);
+    alert(`Goals for ${selectedYear} saved: ${pagesVal} pages, ${booksVal} books`);
     renderStats();
     loadGoalsForYear();
     saveGoalsToCloud();  // ← cloud sync
@@ -476,15 +499,15 @@ document.getElementById("saveGoal").addEventListener("click", () => {
 document.getElementById("removeGoal").addEventListener("click", () => {
     const selectedYear = Number(goalYearInput.value);
     if (goals[selectedYear]) {
-        if (!confirm(Remove goals for ${selectedYear}?)) return;
+        if (!confirm(`Remove goals for ${selectedYear}?`)) return;
         delete goals[selectedYear];
         localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
-        alert(Goals for ${selectedYear} removed.);
+        alert(`Goals for ${selectedYear} removed.`);
         loadGoalsForYear();
         renderStats();
         saveGoalsToCloud();  // ← cloud sync
     } else {
-        alert(No goals set for ${selectedYear}.);
+        alert(`No goals set for ${selectedYear}.`);
     }
 });
 
@@ -615,7 +638,7 @@ function renderShelfManager() {
         row.querySelector(".renameBtn").addEventListener("click", () => {
             const newName = renameInput.value.trim();
             if (!newName || newName === sh) return;
-            if (!confirm(Rename shelf "\( {sh}" to " \){newName}"?)) return;
+            if (!confirm(`Rename shelf "${sh}" to "${newName}"?`)) return;
 
             books.forEach(b => {
                 b.shelves = b.shelves.map(s => s === sh ? newName : s);
@@ -632,7 +655,7 @@ function renderShelfManager() {
         });
 
         row.querySelector(".deleteBtn").addEventListener("click", () => {
-            if (!confirm(Delete shelf "${sh}" from all books?)) return;
+            if (!confirm(`Delete shelf "${sh}" from all books?`)) return;
             books.forEach(b => { b.shelves = b.shelves.filter(s => s !== sh); });
             delete shelfColors[sh];
             saveToStorage();
@@ -704,18 +727,17 @@ function createBookCard(b) {
     div.addEventListener("click", () => openEditModal(b));
     return div;
 }
-
-function createBookCard(b) {
-    const div = document.createElement("div");
-    div.style.cssText = "background:#222; padding:6px; border:1px solid #444; border-radius:4px; width:120px; cursor:pointer; text-align:center;";
-    div.title = `${b.title} — ${b.author}`;
-    div.innerHTML = `
-        <strong class="profile-book-title">${b.title}</strong>
-        <span class="profile-book-author">${b.author}</span>
-    `;
-    div.addEventListener("click", () => openEditModal(b));
-    return div;
-}
+const notePopup = document.createElement("div");
+notePopup.style.position = "absolute";
+notePopup.style.background = "#222";
+notePopup.style.color = "#eee";
+notePopup.style.padding = "6px";
+notePopup.style.border = "1px solid #444";
+notePopup.style.borderRadius = "4px";
+notePopup.style.display = "none";
+notePopup.style.zIndex = 2000;
+document.body.appendChild(notePopup);
+	
 function switchTab(name) {
     document.querySelectorAll(".tab").forEach(t =>
         t.classList.toggle("active", t.dataset.tab === name)
@@ -1057,3 +1079,4 @@ if (document.querySelector(".tab.active").dataset.tab === "stats") renderStats()
 </script>
 </body>
 </html>
+
