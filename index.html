@@ -203,7 +203,7 @@ button.danger:hover {
 <h3>Manage Shelves</h3>
 <div id="shelfManager"></div>
 <hr style="border:1px solid #333; margin:16px 0;">
-Version 1.0.0.1
+Version 1.0.0.2
 </section>
 <!-- Edit Book Modal -->
 <div id="editModal" style="
@@ -275,16 +275,21 @@ document.getElementById("signInBtn").addEventListener("click", async () => {
         alert("Enter email and password.");
         return;
     }
+    const btn = document.getElementById("signInBtn");
+    btn.disabled = true;
     try {
-        document.getElementById("signInBtn").disabled = true;
-        await auth.signInWithEmailAndPassword(email, password);
+        await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+        const userCredential = await auth.signInWithEmailAndPassword(email, password);
+        console.log("Signed in as:", userCredential.user.email);
+        alert("Sign-in successful!");
     } catch (error) {
         console.error("Sign-in error:", error);
         alert("Sign-in failed: " + error.message);
     } finally {
-        document.getElementById("signInBtn").disabled = false;
+        btn.disabled = false;
     }
 });
+
 
 document.getElementById("signUpBtn").addEventListener("click", async () => {
     const email = document.getElementById("authEmail").value.trim();
@@ -1317,3 +1322,4 @@ renderFavourites();
 </script>
 </body>
 </html>
+
