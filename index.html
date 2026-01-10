@@ -33,6 +33,7 @@ tr:hover { background: #1f1f1f; }
 .card-container { display: flex; flex-wrap: wrap; gap: 12px; }
 .book-card { background:#222; padding:10px; border:1px solid #444; border-radius:6px; width:160px; text-align:center; cursor:pointer; position:relative; height:100px; display:flex; flex-direction:column; justify-content:center; }
 .book-card:hover { background:#2a2a2a; }
+.book-card.dragging { opacity: 0.5; }
 .book-card .profile-book-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.95em; }
 .book-card .profile-book-author { display: block; margin-top: 4px; font-size: 0.85em; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .book-card small { display:block; margin-top:4px; font-size:0.8em; color:#ccc; }
@@ -60,10 +61,9 @@ button.danger:hover { background-color: #a83838; }
     <button class="tab" data-tab="stats">Stats</button>
     <button class="tab" data-tab="options">Options</button>
 </div>
-
 <section id="tab-list" class="tab-content active">
     <label>Filter by shelf: <select id="shelfFilter"></select></label>
-    <button id="sortRecent" style="margin-left: 12px;">Sort by Recent</button>
+    <button id="sortRecent" style="margin-left: 12px;">Sort by recent <span id="recentSortIndicator">▼</span></button>
     <button id="addBook" style="margin-top:12px;">Add New Book</button>
     <label style="margin-left:15px">
         Search: <input type="text" id="searchInput" style="width:300px" placeholder="Search title, author, series or use filters">
@@ -86,12 +86,10 @@ button.danger:hover { background-color: #a83838; }
         <tbody id="tableBody"></tbody>
     </table>
 </section>
-
 <section id="tab-stats" class="tab-content">
     <div id="stats"></div>
     <canvas id="statsChart"></canvas>
 </section>
-
 <section id="tab-profile" class="tab-content">
     <div id="profileContainer" style="max-width:800px; margin:auto;">
         <div style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
@@ -115,7 +113,6 @@ button.danger:hover { background-color: #a83838; }
         </div>
     </div>
 </section>
-
 <section id="tab-options" class="tab-content">
     <h3>Import / Export</h3>
     <label>Import list: <input type="file" id="fileInput" accept=".csv,.json"></label>
@@ -149,9 +146,8 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.1.0 (fixed recent sort for imported books – backfills lastModified from dateRead)
+    Version 1.2.0 – improved recent sort (activity dates), year sorting/search (BC support), draggable favourites, toggle recent direction
 </section>
-
 <!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
     <div style="background:#222; padding:20px; border:1px solid #444; max-width:500px; width:100%; max-height:90vh; overflow-y:auto;">
@@ -174,7 +170,6 @@ button.danger:hover { background-color: #a83838; }
         <label>Rating (0-5): <input type="number" id="editRating" min="0" max="5"></label><br>
         <label>Favourite book: <input type="checkbox" id="editFavourite"></label><br>
         <label id="favSeriesLabel">Favourite series: <input type="checkbox" id="editFavouriteSeries"></label><br>
-        <label id="positionByFinishLabel">Position in recent by latest finish date: <input type="checkbox" id="editPositionByFinish"></label><br>
         <label>Bump to top in recent sort: <input type="checkbox" id="editBumpRecent"></label><br>
         <textarea id="editNotes" placeholder="Notes" style="width:100%; height:80px; resize:vertical;"></textarea>
         <div class="modal-footer">
@@ -186,7 +181,6 @@ button.danger:hover { background-color: #a83838; }
         </div>
     </div>
 </div>
-
 <script>
 // Firebase config
 const firebaseConfig = {
@@ -208,34 +202,131 @@ let userRef = null;
 let editingBook = null;
 let books = [];
 let nextImportOrder = 1;
-let sortState = { column: null, direction: 1 };
-
+let sortState = { column: null, direction: -1 }; // default newest first
 const STORAGE_KEY = "reading_list_data";
 const SHOW_NUM_KEY = "reading_list_show_numbers";
 const TAB_KEY = "reading_list_active_tab";
 const GOALS_KEY = "reading_goals_per_year";
 const SHELF_COLORS_KEY = "reading_shelf_colors";
 const PROFILE_KEY = "reading_list_profile";
-
 let shelfColors = {};
 let goals = {};
 let profile = { favourites: [], favouriteSeries: [] };
+let draggedElement = null;
 
-// DOM references
-const goalYearInput = document.getElementById("goalYear");
-const yearGoalInput = document.getElementById("yearGoal");
-const yearBooksInput = document.getElementById("yearBooksGoal");
-const cloudButtons = document.getElementById("cloudButtons");
+// Helpers
+function getLatestReadTimestamp(book) {
+    if (!book.dateRead || book.exclusiveShelf !== "read") return 0;
+    const times = book.dateRead.split(",").map(d => new Date(d.trim()).getTime()).filter(t => !isNaN(t));
+    return times.length ? Math.max(...times) : 0;
+}
 
-// Helper to set lastModified from dateRead if missing
-function setLastModifiedFromDateRead(book) {
-    if (book.exclusiveShelf === "read" && book.dateRead && !book.lastModified) {
-        const dates = book.dateRead.split(",").map(d => d.trim()).filter(Boolean);
-        const timestamps = dates.map(d => new Date(d).getTime()).filter(t => !isNaN(t));
-        if (timestamps.length) {
-            book.lastModified = Math.max(...timestamps);
+function getActivityTimestamp(book) {
+    const times = [
+        book.lastFinished ?? 0,
+        book.dateStarted ?? 0,
+        book.bumpTime ?? 0,
+        book.dateAdded ?? 0
+    ];
+    return Math.max(...times);
+}
+
+function createBookCard(book) {
+    const div = document.createElement("div");
+    div.className = "book-card";
+    div.dataset.bookId = book.importOrder;
+    div.draggable = true;
+    div.innerHTML = `
+        <strong class="profile-book-title">${book.title || "No title"}</strong>
+        <span class="profile-book-author">${book.author || ""}</span>
+    `;
+    div.title = `${book.title} — ${book.author}`;
+    div.addEventListener("click", e => {
+        if (!draggedElement) openEditModal(book);
+    });
+    return div;
+}
+
+function createSeriesCard(series) {
+    const seriesBooks = books.filter(b => b.series === series);
+    if (seriesBooks.length === 0) return null;
+    const author = seriesBooks[0].author || "Various";
+    const count = seriesBooks.length;
+    const div = document.createElement("div");
+    div.className = "book-card";
+    div.innerHTML = `
+        <strong class="profile-book-title">${series}</strong>
+        <span class="profile-book-author">${author}</span>
+        <small>${count} book${count > 1 ? 's' : ''}</small>
+    `;
+    div.title = `${series} (${count} books)`;
+    return div;
+}
+
+function makeFavouritesDraggable(container) {
+    container.addEventListener("dragstart", e => {
+        const card = e.target.closest(".book-card");
+        if (card) {
+            draggedElement = card;
+            card.classList.add("dragging");
+            e.dataTransfer.effectAllowed = "move";
         }
-    }
+    });
+
+    container.addEventListener("dragover", e => {
+        e.preventDefault();
+        const card = e.target.closest(".book-card");
+        if (card && card !== draggedElement) {
+            const rect = card.getBoundingClientRect();
+            const next = (e.clientY - rect.top) > (rect.height / 2);
+            if (next && card.nextSibling !== draggedElement) {
+                container.insertBefore(draggedElement, card.nextSibling);
+            } else if (!next && card !== draggedElement.nextSibling) {
+                container.insertBefore(draggedElement, card);
+            }
+        }
+    });
+
+    container.addEventListener("dragend", () => {
+        if (draggedElement) {
+            draggedElement.classList.remove("dragging");
+            profile.favourites = Array.from(container.querySelectorAll(".book-card")).map(c => Number(c.dataset.bookId));
+            localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+            draggedElement = null;
+        }
+    });
+
+    container.addEventListener("drop", e => e.preventDefault());
+}
+
+let notePopup = null;
+function createNotePopup() {
+    notePopup = document.createElement("div");
+    notePopup.style.position = "absolute";
+    notePopup.style.background = "#222";
+    notePopup.style.color = "#eee";
+    notePopup.style.padding = "8px";
+    notePopup.style.border = "1px solid #444";
+    notePopup.style.borderRadius = "4px";
+    notePopup.style.zIndex = "3000";
+    notePopup.style.display = "none";
+    notePopup.style.maxWidth = "300px";
+    document.body.appendChild(notePopup);
+    return notePopup;
+}
+function showNotePopup(popup, text) {
+    popup.textContent = text;
+    popup.style.display = "block";
+    document.addEventListener("mousemove", moveNotePopup);
+}
+function hideNotePopup(popup) {
+    popup.style.display = "none";
+    document.removeEventListener("mousemove", moveNotePopup);
+}
+function moveNotePopup(e) {
+    if (!notePopup) return;
+    notePopup.style.left = (e.clientX + 12) + "px";
+    notePopup.style.top = (e.clientY + 12) + "px";
 }
 
 // Auth listener
@@ -245,7 +336,6 @@ auth.onAuthStateChanged(user => {
     const signInBtn = document.getElementById("signInBtn");
     const signUpBtn = document.getElementById("signUpBtn");
     const signOutBtn = document.getElementById("signOutBtn");
-
     if (user) {
         userRef = db.ref("users/" + user.uid);
         syncStatus.textContent = `Signed in as ${user.email} (manual sync)`;
@@ -265,15 +355,11 @@ auth.onAuthStateChanged(user => {
     renderAll();
 });
 
-// Load local data
+// Load local data + migration
 function loadLocalData() {
     const savedBooks = localStorage.getItem(STORAGE_KEY);
     if (savedBooks) {
-        try {
-            books = JSON.parse(savedBooks);
-        } catch {
-            books = [];
-        }
+        try { books = JSON.parse(savedBooks); } catch { books = []; }
     } else {
         books = [];
     }
@@ -281,8 +367,21 @@ function loadLocalData() {
     let maxOrder = 0;
     books.forEach(b => {
         if (!b.importOrder) b.importOrder = nextImportOrder++;
-        maxOrder = Math.max(maxOrder, b.importOrder);
-        setLastModifiedFromDateRead(b);
+        maxOrder = Math.max(maxOrder, b.importOrder ?? 0);
+
+        // Migrate old lastModified to new fields
+        if (b.lastModified != null) {
+            if (b.bumpTime == null) b.bumpTime = b.lastModified;
+            delete b.lastModified;
+        }
+
+        // Backfill missing activity dates
+        if (b.dateAdded == null) b.dateAdded = Date.now();
+        if (b.exclusiveShelf === "currently-reading" && b.dateStarted == null) b.dateStarted = b.dateAdded;
+        if (b.exclusiveShelf === "read" && b.lastFinished == null) {
+            const ts = getLatestReadTimestamp(b);
+            if (ts > 0) b.lastFinished = ts;
+        }
     });
     nextImportOrder = maxOrder + 1;
 
@@ -294,7 +393,6 @@ function loadLocalData() {
     goals = JSON.parse(localStorage.getItem(GOALS_KEY) || "{}");
     shelfColors = JSON.parse(localStorage.getItem(SHELF_COLORS_KEY) || "{}");
     document.getElementById("showNumbers").checked = JSON.parse(localStorage.getItem(SHOW_NUM_KEY) || "true");
-
     document.getElementById("profileNick").value = profile.nick || "";
     document.getElementById("profileBio").value = profile.bio || "";
     if (profile.picture) document.getElementById("profilePic").src = profile.picture;
@@ -306,11 +404,10 @@ function saveBooksToLocal() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
 }
 
-// Cloud save
+// Cloud save / load (unchanged except new fields are saved automatically)
 document.getElementById("saveCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite cloud data with current local data?")) return;
-
     const dataToSave = {
         books: books,
         profile: profile,
@@ -318,55 +415,35 @@ document.getElementById("saveCloudBtn").addEventListener("click", () => {
         shelfColors: shelfColors,
         settings: { showNumbers: document.getElementById("showNumbers").checked }
     };
-
     userRef.set(dataToSave)
         .then(() => alert("Saved to cloud successfully!"))
         .catch(err => alert("Save failed: " + err.message));
 });
 
-// Cloud load
 document.getElementById("loadCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite local data with cloud data? This cannot be undone.")) return;
-
     userRef.once("value")
         .then(snap => {
             const data = snap.val();
             if (!data) return alert("No data in cloud");
-
             let loadedBooks = data.books || [];
             if (!Array.isArray(loadedBooks)) loadedBooks = Object.values(loadedBooks);
-
             books = loadedBooks;
-
-            let maxOrder = 0;
-            books.forEach(b => {
-                if (!b.importOrder) b.importOrder = nextImportOrder++;
-                maxOrder = Math.max(maxOrder, b.importOrder);
-                setLastModifiedFromDateRead(b);
-            });
-            nextImportOrder = maxOrder + 1;
-
+            loadLocalData(); // re-process migration/backfill
             profile = data.profile || { favourites: [], favouriteSeries: [] };
-            profile.favourites = (profile.favourites || []).filter(id => typeof id === 'number' && books.some(b => b.importOrder === id));
-            profile.favouriteSeries = (profile.favouriteSeries || []).filter(s => typeof s === 'string');
-
             goals = data.goals || {};
             shelfColors = data.shelfColors || {};
             const settings = data.settings || {};
             document.getElementById("showNumbers").checked = settings.showNumbers ?? true;
-
             document.getElementById("profileNick").value = profile.nick || "";
             document.getElementById("profileBio").value = profile.bio || "";
             if (profile.picture) document.getElementById("profilePic").src = profile.picture;
-            loadGoalsForYear();
-
             saveBooksToLocal();
             localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
             localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
             localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
             localStorage.setItem(SHOW_NUM_KEY, document.getElementById("showNumbers").checked);
-
             renderAll();
             alert("Loaded from cloud successfully!");
         })
@@ -378,7 +455,6 @@ function switchTab(name) {
     document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
     document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === "tab-" + name));
     localStorage.setItem(TAB_KEY, name);
-
     if (name === "options") renderShelfManager();
     if (name === "stats") renderStats();
     if (name === "profile") {
@@ -388,7 +464,6 @@ function switchTab(name) {
     }
 }
 
-// Render everything
 function renderAll() {
     populateShelfFilter();
     renderTable();
@@ -414,6 +489,7 @@ function openEditModal(book = null) {
     document.getElementById("editRating").value = book?.rating || 0;
     document.getElementById("editNotes").value = book?.notes || "";
     document.getElementById("editFavourite").checked = !!book && profile.favourites.includes(book.importOrder);
+    document.getElementById("editBumpRecent").checked = false;
 
     const series = book?.series || "";
     if (series) {
@@ -423,12 +499,6 @@ function openEditModal(book = null) {
         document.getElementById("favSeriesLabel").style.display = "none";
     }
 
-    const isRead = (book?.exclusiveShelf || document.getElementById("editExclusiveShelf").value) === "read";
-    document.getElementById("positionByFinishLabel").style.display = isRead ? "block" : "none";
-    document.getElementById("editPositionByFinish").checked = false;
-
-    document.getElementById("editBumpRecent").checked = false;
-
     document.getElementById("editModal").style.display = "flex";
 }
 
@@ -437,79 +507,12 @@ function closeEditModal() {
     document.getElementById("editModal").style.display = "none";
 }
 
-function getLatestReadTimestamp(book) {
-    if (!book.dateRead || book.exclusiveShelf !== "read") return 0;
-    const times = book.dateRead.split(",").map(d => new Date(d.trim()).getTime()).filter(t => !isNaN(t));
-    return times.length ? Math.max(...times) : 0;
-}
-
-function createBookCard(book) {
-    const div = document.createElement("div");
-    div.className = "book-card";
-    div.innerHTML = `
-        <strong class="profile-book-title">${book.title || "No title"}</strong>
-        <span class="profile-book-author">${book.author || ""}</span>
-    `;
-    div.title = `${book.title} — ${book.author}`;
-    div.addEventListener("click", () => openEditModal(book));
-    return div;
-}
-
-function createSeriesCard(series) {
-    const seriesBooks = books.filter(b => b.series === series);
-    if (seriesBooks.length === 0) return null;
-    const author = seriesBooks[0].author || "Various";
-    const count = seriesBooks.length;
-    const div = document.createElement("div");
-    div.className = "book-card";
-    div.innerHTML = `
-        <strong class="profile-book-title">${series}</strong>
-        <span class="profile-book-author">${author}</span>
-        <small>${count} book${count > 1 ? 's' : ''}</small>
-    `;
-    div.title = `${series} (${count} books)`;
-    return div;
-}
-
-let notePopup = null;
-function createNotePopup() {
-    notePopup = document.createElement("div");
-    notePopup.style.position = "absolute";
-    notePopup.style.background = "#222";
-    notePopup.style.color = "#eee";
-    notePopup.style.padding = "8px";
-    notePopup.style.border = "1px solid #444";
-    notePopup.style.borderRadius = "4px";
-    notePopup.style.zIndex = "3000";
-    notePopup.style.display = "none";
-    notePopup.style.maxWidth = "300px";
-    document.body.appendChild(notePopup);
-    return notePopup;
-}
-
-function showNotePopup(popup, text) {
-    popup.textContent = text;
-    popup.style.display = "block";
-    document.addEventListener("mousemove", moveNotePopup);
-}
-
-function hideNotePopup(popup) {
-    popup.style.display = "none";
-    document.removeEventListener("mousemove", moveNotePopup);
-}
-
-function moveNotePopup(e) {
-    if (!notePopup) return;
-    notePopup.style.left = (e.clientX + 12) + "px";
-    notePopup.style.top = (e.clientY + 12) + "px";
-}
-
+// Table rendering
 function renderTable() {
     const showNumbers = document.getElementById("showNumbers").checked;
     const filter = document.getElementById("shelfFilter").value;
     const tbody = document.getElementById("tableBody");
     tbody.innerHTML = "";
-
     let list = books.slice();
 
     if (filter !== "all") {
@@ -522,11 +525,7 @@ function renderTable() {
     if (sortState.column) {
         list.sort((a, b) => compare(a, b, sortState.column) * sortState.direction);
     } else {
-        list.sort((a, b) => {
-            const ma = a.lastModified ?? a.importOrder ?? 0;
-            const mb = b.lastModified ?? b.importOrder ?? 0;
-            return mb - ma;
-        });
+        list.sort((a, b) => (getActivityTimestamp(b) - getActivityTimestamp(a)) * sortState.direction);
     }
 
     list.forEach((book, idx) => {
@@ -534,22 +533,19 @@ function renderTable() {
         const shelvesDisplay = [book.exclusiveShelf, ...(book.shelves || [])].filter(Boolean)
             .map(sh => `<span style="background:${shelfColors[sh] || '#888'}; padding:2px 4px; margin-right:2px; border-radius:3px;">${sh}</span>`)
             .join("");
-
         tr.innerHTML = `
             <td>${showNumbers ? (idx + 1) + ". " : ""}${book.title || ""}${book.notes ? ' <span class="noteIcon" style="cursor:help;color:#888;">📝</span>' : ''}</td>
             <td>${book.rating || "-"}</td>
             <td>${book.author || ""}</td>
             <td>${shelvesDisplay}</td>
             <td>${book.pages || "-"}</td>
-            <td>${book.year || "-"}</td>
+            <td>${book.year ?? "-"}</td>
             <td>${book.dateRead || "-"}</td>
             <td>${book.readCount ?? "-"}</td>
             <td><button class="editBtn" style="padding:2px 6px;">✎</button></td>
         `;
         tbody.appendChild(tr);
-
         tr.querySelector(".editBtn").addEventListener("click", () => openEditModal(book));
-
         if (book.notes) {
             const icon = tr.querySelector(".noteIcon");
             const popup = notePopup || createNotePopup();
@@ -560,16 +556,33 @@ function renderTable() {
 }
 
 function compare(a, b, col) {
-    let av = a[col] ?? "";
-    let bv = b[col] ?? "";
+    let av = a[col];
+    let bv = b[col];
+
+    if (col === "year") {
+        av = av ?? Infinity; // nulls last
+        bv = bv ?? Infinity;
+        if (av === Infinity && bv === Infinity) return 0;
+        return av - bv;
+    }
+
+    if (col === "pages" || col === "rating" || col === "readCount") {
+        av = av ?? 0;
+        bv = bv ?? 0;
+        return av - bv;
+    }
+
+    if (col === "dateRead") {
+        return getLatestReadTimestamp(a) - getLatestReadTimestamp(b);
+    }
+
     if (col === "shelves") {
         av = [a.exclusiveShelf, ...(a.shelves || [])].join(", ");
         bv = [b.exclusiveShelf, ...(b.shelves || [])].join(", ");
     }
-    if (col === "dateRead") {
-        return getLatestReadTimestamp(a) - getLatestReadTimestamp(b);
-    }
-    if (typeof av === "number") return av - bv;
+
+    av = av ?? "";
+    bv = bv ?? "";
     return String(av).localeCompare(String(bv));
 }
 
@@ -586,14 +599,22 @@ function handleSort(col) {
 
 function updateSortIndicators() {
     document.querySelectorAll(".sort").forEach(s => s.textContent = "");
+    document.getElementById("recentSortIndicator").textContent = "";
     if (sortState.column) {
         const el = document.querySelector(`th[data-col="${sortState.column}"] .sort`);
         if (el) el.textContent = sortState.direction > 0 ? "▲" : "▼";
+    } else {
+        document.getElementById("recentSortIndicator").textContent = sortState.direction < 0 ? "▼" : "▲";
     }
 }
 
 document.getElementById("sortRecent").addEventListener("click", () => {
-    sortState = { column: null, direction: 1 };
+    if (sortState.column === null) {
+        sortState.direction *= -1;
+    } else {
+        sortState.column = null;
+        sortState.direction = -1;
+    }
     updateSortIndicators();
     renderTable();
 });
@@ -623,13 +644,34 @@ function filterBooksByQuery(list, query) {
             if ((m = term.match(/^count([<>=!]+)?(\d+)$/))) {
                 let op = m[1] || "=";
                 const num = Number(m[2]);
-                const c = book.readCount ?? 0;
-                if (op === ">") match = match && c > num;
-                else if (op === ">=") match = match && c >= num;
-                else if (op === "<") match = match && c < num;
-                else if (op === "<=") match = match && c <= num;
-                else if (op === "=" || op === "==") match = match && c === num;
-                else if (op === "!=") match = match && c !== num;
+                const val = book.readCount ?? 0;
+                if (op === ">") match = match && val > num;
+                else if (op === ">=") match = match && val >= num;
+                else if (op === "<") match = match && val < num;
+                else if (op === "<=") match = match && val <= num;
+                else if (op === "=" || op === "==") match = match && val === num;
+                else if (op === "!=") match = match && val !== num;
+            } else if ((m = term.match(/^pages([<>=!]+)?(\d+)$/i))) {
+                let op = m[1] || "=";
+                const num = Number(m[2]);
+                const val = book.pages ?? 0;
+                if (op === ">") match = match && val > num;
+                else if (op === ">=") match = match && val >= num;
+                else if (op === "<") match = match && val < num;
+                else if (op === "<=") match = match && val <= num;
+                else if (op === "=" || op === "==") match = match && val === num;
+                else if (op === "!=") match = match && val !== num;
+            } else if ((m = term.match(/^year([<>=!]+)?(-?\d+)$/i))) {
+                let op = m[1] || "=";
+                const num = Number(m[2]);
+                if (book.year == null) { match = false; continue; }
+                const val = book.year;
+                if (op === ">") match = match && val > num;
+                else if (op === ">=") match = match && val >= num;
+                else if (op === "<") match = match && val < num;
+                else if (op === "<=") match = match && val <= num;
+                else if (op === "=" || op === "==") match = match && val === num;
+                else if (op === "!=") match = match && val !== num;
             } else if ((m = term.match(/^date([<>=!]+)(\d{4})$/))) {
                 const op = m[1], num = Number(m[2]);
                 const dates = (book.dateRead || "").split(",").map(d => d.trim()).filter(Boolean);
@@ -651,6 +693,7 @@ function filterBooksByQuery(list, query) {
     });
 }
 
+// Stats (unchanged)
 function calculatePerYear() {
     const perYear = {};
     books.forEach(b => {
@@ -670,19 +713,11 @@ function calculatePerYear() {
 function renderStats() {
     const container = document.getElementById("stats");
     const ctx = document.getElementById("statsChart").getContext("2d");
-
-    if (window.statsChart) {
-        if (typeof window.statsChart.destroy === 'function') {
-            window.statsChart.destroy();
-        }
-        window.statsChart = null;
-    }
-
+    if (window.statsChart) window.statsChart.destroy();
     if (!books.length) {
         container.innerHTML = "<p>No books yet.</p>";
         return;
     }
-
     const perYear = calculatePerYear();
     const readBooks = books.filter(b => b.exclusiveShelf === "read");
     const pagesRead = readBooks.reduce((s, b) => s + (b.pages || 0) * Math.max(1, b.readCount || 1), 0);
@@ -691,9 +726,7 @@ function renderStats() {
     const currentBooks = perYear[selectedYear]?.books || 0;
     const pagesGoal = goals[selectedYear]?.pages || 0;
     const booksGoal = goals[selectedYear]?.books || 0;
-
     let html = "";
-
     if (pagesGoal || booksGoal) {
         html += `
             <div style="background:#222; padding:20px; border:1px solid #555; border-radius:8px; margin-bottom:30px; text-align:center;">
@@ -703,7 +736,6 @@ function renderStats() {
             </div>
         `;
     }
-
     html += `
         <h2>Overall Stats</h2>
         <div class="stats-grid">
@@ -713,13 +745,10 @@ function renderStats() {
         </div>
         <div class="stats-year">By year:<br>${Object.keys(perYear).sort((a,b)=>b-a).map(y => `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages`).join("<br>") || "none"}</div>
     `;
-
     container.innerHTML = html;
-
     const labels = Object.keys(perYear).sort();
     const booksData = labels.map(y => perYear[y].books);
     const pagesData = labels.map(y => perYear[y].pages);
-
     window.statsChart = new Chart(ctx, {
         type: 'bar',
         data: { labels, datasets: [
@@ -742,7 +771,6 @@ function renderProfileStats() {
     const readBooks = books.filter(b => b.exclusiveShelf === "read");
     const pagesRead = readBooks.reduce((s, b) => s + (b.pages || 0) * Math.max(1, b.readCount || 1), 0);
     const avgRating = readBooks.length ? (readBooks.reduce((s, b) => s + (b.rating || 0), 0) / readBooks.length).toFixed(1) : "0.0";
-
     container.innerHTML = `
         <h2>Reading Stats</h2>
         <div class="stats-grid">
@@ -756,31 +784,27 @@ function renderProfileStats() {
 function renderRecentBooks() {
     const container = document.getElementById("recentBooksContainer");
     container.innerHTML = "";
+    const sortDesc = (a, b) => getActivityTimestamp(b) - getActivityTimestamp(a);
 
     let currently = books.filter(b => b.exclusiveShelf === "currently-reading");
     if (currently.length) {
         container.innerHTML += "<h4>Currently Reading</h4><div class=\"card-container\"></div>";
-        currently.sort((a, b) => (b.lastModified ?? b.importOrder ?? 0) - (a.lastModified ?? a.importOrder ?? 0));
-        currently.forEach(b => container.lastChild.appendChild(createBookCard(b)));
+        currently.sort(sortDesc).forEach(b => container.lastChild.appendChild(createBookCard(b)));
     }
 
-    let finished = books.filter(b => b.exclusiveShelf === "read" && b.dateRead);
+    let finished = books.filter(b => b.exclusiveShelf === "read" && b.lastFinished);
     if (finished.length) {
         container.innerHTML += "<h4>Recently Finished</h4><div class=\"card-container\"></div>";
-        finished.sort((a, b) => getLatestReadTimestamp(b) - getLatestReadTimestamp(a));
-        finished.slice(0, 8).forEach(b => container.lastChild.appendChild(createBookCard(b)));
+        finished.sort(sortDesc).slice(0, 8).forEach(b => container.lastChild.appendChild(createBookCard(b)));
     }
 
     let toread = books.filter(b => b.exclusiveShelf === "to-read");
     if (toread.length) {
         container.innerHTML += "<h4>Recently Added to To-Read</h4><div class=\"card-container\"></div>";
-        toread.sort((a, b) => (b.lastModified ?? b.importOrder ?? 0) - (a.lastModified ?? a.importOrder ?? 0));
-        toread.slice(0, 4).forEach(b => container.lastChild.appendChild(createBookCard(b)));
+        toread.sort(sortDesc).slice(0, 4).forEach(b => container.lastChild.appendChild(createBookCard(b)));
     }
 
-    if (!container.innerHTML.trim()) {
-        container.innerHTML = "<p>No activity yet.</p>";
-    }
+    if (!container.innerHTML.trim()) container.innerHTML = "<p>No activity yet.</p>";
 }
 
 function renderFavourites() {
@@ -790,8 +814,7 @@ function renderFavourites() {
 
     if (profile.favouriteSeries.length) {
         container.innerHTML += "<h4>Favourite Series</h4><div class=\"card-container\"></div>";
-        profile.favouriteSeries.sort();
-        profile.favouriteSeries.forEach(series => {
+        profile.favouriteSeries.sort().forEach(series => {
             const card = createSeriesCard(series);
             if (card) {
                 hasContent = true;
@@ -801,20 +824,20 @@ function renderFavourites() {
     }
 
     if (profile.favourites.length) {
-        const favBooks = books.filter(b => profile.favourites.includes(b.importOrder));
+        const favBooks = profile.favourites.map(id => books.find(b => b.importOrder === id)).filter(Boolean);
         if (favBooks.length) {
             hasContent = true;
             container.innerHTML += "<h4>Favourite Books</h4><div class=\"card-container\"></div>";
-            favBooks.sort((a, b) => getLatestReadTimestamp(b) - getLatestReadTimestamp(a));
-            favBooks.forEach(b => container.lastChild.appendChild(createBookCard(b)));
+            const favContainer = container.lastChild;
+            favBooks.forEach(book => favContainer.appendChild(createBookCard(book)));
+            makeFavouritesDraggable(favContainer);
         }
     }
 
-    if (!hasContent) {
-        container.innerHTML = "<p>No favourites yet.</p>";
-    }
+    if (!hasContent) container.innerHTML = "<p>No favourites yet.</p>";
 }
 
+// Shelf manager (unchanged)
 function renderShelfManager() {
     const container = document.getElementById("shelfManager");
     container.innerHTML = "";
@@ -830,29 +853,24 @@ function renderShelfManager() {
             <button class="deleteShelf">Delete</button>
         `;
         container.appendChild(div);
-
         div.querySelector(".shelfColor").addEventListener("input", e => {
             shelfColors[shelf] = e.target.value;
             localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
             renderTable();
         });
-
         div.querySelector(".renameShelf").addEventListener("click", () => {
             const newName = div.querySelector(".shelfName").value.trim();
             if (!newName || newName === shelf) return;
             if (!confirm(`Rename "${shelf}" → "${newName}" everywhere?`)) return;
-
             books.forEach(b => {
                 if (b.shelves) b.shelves = b.shelves.map(s => s === shelf ? newName : s);
             });
             shelfColors[newName] = shelfColors[shelf] || '#888888';
             delete shelfColors[shelf];
-
             localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
             saveBooksToLocal();
             renderAll();
         });
-
         div.querySelector(".deleteShelf").addEventListener("click", () => {
             if (!confirm(`Remove shelf "${shelf}" from all books?`)) return;
             books.forEach(b => {
@@ -875,13 +893,10 @@ function loadGoalsForYear() {
 
 // Event listeners
 document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
-
 document.getElementById("addBook").addEventListener("click", () => openEditModal());
-
 document.getElementById("searchInput").addEventListener("input", renderTable);
 document.getElementById("shelfFilter").addEventListener("change", renderTable);
 document.querySelectorAll("th[data-col]").forEach(th => th.addEventListener("click", () => handleSort(th.dataset.col)));
-
 document.getElementById("fileInput").addEventListener("change", e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -892,7 +907,6 @@ document.getElementById("fileInput").addEventListener("change", e => {
     };
     reader.readAsText(file);
 });
-
 document.getElementById("exportData").addEventListener("click", () => {
     const data = { books };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -903,7 +917,6 @@ document.getElementById("exportData").addEventListener("click", () => {
     a.click();
     URL.revokeObjectURL(url);
 });
-
 document.getElementById("clearStorage").addEventListener("click", () => {
     if (confirm("Clear all local data? (Cloud data stays if signed in)")) {
         localStorage.clear();
@@ -915,23 +928,19 @@ document.getElementById("clearStorage").addEventListener("click", () => {
         renderAll();
     }
 });
-
 document.getElementById("signInBtn").addEventListener("click", () => {
     const email = document.getElementById("authEmail").value.trim();
     const pass = document.getElementById("authPassword").value;
     if (!email || !pass) return alert("Enter email and password");
     auth.signInWithEmailAndPassword(email, pass).catch(err => alert("Sign in error: " + err.message));
 });
-
 document.getElementById("signUpBtn").addEventListener("click", () => {
     const email = document.getElementById("authEmail").value.trim();
     const pass = document.getElementById("authPassword").value;
     if (!email || !pass) return alert("Enter email and password");
     auth.createUserWithEmailAndPassword(email, pass).catch(err => alert("Sign up error: " + err.message));
 });
-
 document.getElementById("signOutBtn").addEventListener("click", () => auth.signOut());
-
 document.getElementById("saveGoal").addEventListener("click", () => {
     const year = Number(goalYearInput.value);
     const pages = Number(yearGoalInput.value) || 0;
@@ -940,7 +949,6 @@ document.getElementById("saveGoal").addEventListener("click", () => {
     localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
     renderStats();
 });
-
 document.getElementById("removeGoal").addEventListener("click", () => {
     const year = Number(goalYearInput.value);
     if (goals[year] && confirm(`Remove goals for ${year}?`)) {
@@ -950,12 +958,10 @@ document.getElementById("removeGoal").addEventListener("click", () => {
         renderStats();
     }
 });
-
 document.getElementById("showNumbers").addEventListener("change", () => {
     localStorage.setItem(SHOW_NUM_KEY, document.getElementById("showNumbers").checked);
     renderTable();
 });
-
 document.getElementById("profilePic").addEventListener("click", () => document.getElementById("profilePicInput").click());
 document.getElementById("profilePicInput").addEventListener("change", e => {
     const file = e.target.files[0];
@@ -968,7 +974,6 @@ document.getElementById("profilePicInput").addEventListener("change", e => {
     };
     reader.readAsDataURL(file);
 });
-
 let profileSaveTimeout;
 document.getElementById("profileNick").addEventListener("input", () => {
     clearTimeout(profileSaveTimeout);
@@ -977,7 +982,6 @@ document.getElementById("profileNick").addEventListener("input", () => {
         localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
     }, 800);
 });
-
 document.getElementById("profileBio").addEventListener("input", () => {
     clearTimeout(profileSaveTimeout);
     profileSaveTimeout = setTimeout(() => {
@@ -1002,38 +1006,41 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         notes: document.getElementById("editNotes").value.trim()
     };
 
-    let newModified = null;
-
     const bumpNow = document.getElementById("editBumpRecent").checked;
-    const positionByFinish = document.getElementById("editPositionByFinish").checked;
-
-    if (positionByFinish && data.exclusiveShelf === "read" && data.dateRead) {
-        const dates = data.dateRead.split(",").map(d => d.trim()).filter(Boolean);
-        const timestamps = dates.map(d => new Date(d).getTime()).filter(t => !isNaN(t));
-        if (timestamps.length) {
-            newModified = Math.max(...timestamps);
-        }
-    }
-
-    if (bumpNow || newModified === null) {
-        newModified = now;
-    }
 
     if (editingBook) {
-        const oldStatus = editingBook.exclusiveShelf;
-        const statusChanged = data.exclusiveShelf !== oldStatus;
         Object.assign(editingBook, data);
-        if (statusChanged || bumpNow || positionByFinish) {
-            editingBook.lastModified = newModified;
-        }
     } else {
         data.importOrder = nextImportOrder++;
-        data.lastModified = newModified;
+        data.dateAdded = now;
         books.unshift(data);
+        editingBook = data;
     }
 
-    const bookId = editingBook ? editingBook.importOrder : data.importOrder;
+    // Activity timestamps
+    if (data.exclusiveShelf === "currently-reading") {
+        editingBook.dateStarted = editingBook.dateStarted || now;
+    } else {
+        editingBook.dateStarted = null;
+    }
 
+    if (data.exclusiveShelf === "read") {
+        const timestamps = (data.dateRead || "").split(",")
+            .map(d => d.trim())
+            .filter(Boolean)
+            .map(d => new Date(d).getTime())
+            .filter(t => !isNaN(t));
+        editingBook.lastFinished = timestamps.length ? Math.max(...timestamps) : now;
+    } else {
+        editingBook.lastFinished = null;
+    }
+
+    if (bumpNow) {
+        editingBook.bumpTime = now;
+    }
+
+    // Favourites
+    const bookId = editingBook.importOrder;
     const isFav = document.getElementById("editFavourite").checked;
     if (isFav) {
         if (!profile.favourites.includes(bookId)) profile.favourites.push(bookId);
@@ -1070,11 +1077,9 @@ document.getElementById("editModal").addEventListener("click", e => {
 document.getElementById("filterInfo").addEventListener("click", () => {
     alert(`Search syntax:
 • Normal words → title / author / series
-• status=read status!=to-read
-• pages>300 pages<=100
-• year>=2020
+• pages>300 pages<=100 pages=500
+• year>=-50 year<10 year=-500 (negative = BC)
 • count>1 (rereads)
-• count=0 (never read)
 • date=2024 (first read year)
 Combine with spaces (AND).`);
 });
@@ -1100,7 +1105,6 @@ function parseCSV(text) {
     if (!lines.length) return;
     const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim());
     const idx = name => headers.findIndex(h => h === name);
-
     books = [];
     nextImportOrder = 1;
     for (let i = 1; i < lines.length; i++) {
@@ -1122,9 +1126,12 @@ function parseCSV(text) {
             rating: Number(cols[idx("My Rating")]) || 0,
             notes: cols[idx("My Review")] || "",
             importOrder: nextImportOrder++,
-            lastModified: Date.now()
+            dateAdded: Date.now()
         };
-        setLastModifiedFromDateRead(book);
+        if (book.exclusiveShelf === "read") {
+            const ts = getLatestReadTimestamp(book);
+            if (ts > 0) book.lastFinished = ts;
+        }
         books.push(book);
     }
     saveBooksToLocal();
@@ -1137,11 +1144,7 @@ function importJSON(text) {
     if (!data.books || !Array.isArray(data.books)) return alert("Invalid export");
     if (!confirm("Import will replace current list. Continue?")) return;
     books = data.books;
-    books.forEach(b => {
-        if (b.importOrder == null) b.importOrder = nextImportOrder++;
-        setLastModifiedFromDateRead(b);
-    });
-    nextImportOrder = books.reduce((m, b) => Math.max(m, b.importOrder ?? 0), 0) + 1;
+    loadLocalData(); // migration/backfill
     saveBooksToLocal();
     renderAll();
 }
@@ -1151,7 +1154,6 @@ loadLocalData();
 const savedTab = localStorage.getItem(TAB_KEY) || "list";
 switchTab(savedTab);
 renderAll();
-
 </script>
 </body>
 </html>
