@@ -339,32 +339,23 @@ auth.getRedirectResult()
 // C. Auth State Listener
 auth.onAuthStateChanged(user => {
     currentUser = user;
-    if (user) {
-        document.getElementById("signInBtn").style.display = "none";
-        document.getElementById("signOutBtn").style.display = "inline-block";
-        document.getElementById("syncStatus").textContent = `Signed in: ${user.displayName || user.email}`;
+    const signInBtn = document.getElementById("signInBtn");
+    const signOutBtn = document.getElementById("signOutBtn");
+    const statusEl = document.getElementById("syncStatus");
 
-        // Load cloud data
-        loadFromFirestore();  // <— simplified
+    if (user) {
+        signInBtn.style.display = "none";
+        signOutBtn.style.display = "inline-block";
+        statusEl.textContent = `Zalogowano: ${user.displayName || user.email}`;
+        loadFromFirestore();
     } else {
-        document.getElementById("signInBtn").style.display = "inline-block";
-        document.getElementById("signOutBtn").style.display = "none";
-        document.getElementById("syncStatus").textContent = "Local Mode (offline)";
+        signInBtn.style.display = "inline-block";
+        signOutBtn.style.display = "none";
+        statusEl.textContent = "Tryb lokalny (offline)";
         loadAllFromStorage();
     }
+    if(signInBtn) signInBtn.disabled = false;
 });
-
-}
-
-    } else {
-        // Logged Out
-        document.getElementById("signInBtn").style.display = "inline-block";
-        document.getElementById("signOutBtn").style.display = "none";
-        document.getElementById("syncStatus").textContent = "Not signed in (Local only)";
-        document.getElementById("signInBtn").disabled = false;
-    }
-});
-
 // Fail-safe: show local data if Firebase doesn't respond quickly
 setTimeout(() => {
     const status = document.getElementById("syncStatus");
@@ -374,7 +365,7 @@ setTimeout(() => {
         document.getElementById("signInBtn").style.display = "inline-block";
         document.getElementById("signInBtn").disabled = false;
     }
-}, 4000);
+}, 1000);
 
 
 // Auth Buttons
@@ -987,20 +978,25 @@ document.getElementById("clearStorage").addEventListener("click", () => {
     }
 });
 
-// Initial Render - Use DOMContentLoaded to ensure elements exist
+// Initial Render
 window.addEventListener('DOMContentLoaded', () => {
-    loadAllFromStorage(); // Ensure memory is populated from local storage
+    // 1. Wymuś załadowanie danych z localStorage na start
+    loadAllFromStorage(); 
+    
+    // 2. Ustaw status wizualny, jeśli Firebase jeszcze "myśli"
+    const statusEl = document.getElementById("syncStatus");
+    if (statusEl.textContent === "Loading local data...") {
+        statusEl.textContent = "Wczytywanie danych...";
+    }
+
+    // 3. Przełącz na zapamiętaną zakładkę i wyrenderuj
     const savedTab = localStorage.getItem(TAB_KEY) || "list";
     switchTab(savedTab);
-    populateShelfFilter(); // Populate the dropdown
-    renderTable(); // Force the first render
+    
+    // 4. Dodatkowe wymuszenie renderowania tabeli
+    renderTable(); 
 });
 
 </script>
 </body>
 </html>
-
-
-
-
-
