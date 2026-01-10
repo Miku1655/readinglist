@@ -149,7 +149,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.0.9 (final tweaks: cropped titles, author below, count=0 unread, nicer goals, finish-date positioning)
+    Version 1.1.0 (fixed recent sort for imported books – backfills lastModified from dateRead)
 </section>
 
 <!-- Edit Modal -->
@@ -227,6 +227,17 @@ const yearGoalInput = document.getElementById("yearGoal");
 const yearBooksInput = document.getElementById("yearBooksGoal");
 const cloudButtons = document.getElementById("cloudButtons");
 
+// Helper to set lastModified from dateRead if missing
+function setLastModifiedFromDateRead(book) {
+    if (book.exclusiveShelf === "read" && book.dateRead && !book.lastModified) {
+        const dates = book.dateRead.split(",").map(d => d.trim()).filter(Boolean);
+        const timestamps = dates.map(d => new Date(d).getTime()).filter(t => !isNaN(t));
+        if (timestamps.length) {
+            book.lastModified = Math.max(...timestamps);
+        }
+    }
+}
+
 // Auth listener
 auth.onAuthStateChanged(user => {
     currentUser = user;
@@ -271,6 +282,7 @@ function loadLocalData() {
     books.forEach(b => {
         if (!b.importOrder) b.importOrder = nextImportOrder++;
         maxOrder = Math.max(maxOrder, b.importOrder);
+        setLastModifiedFromDateRead(b);
     });
     nextImportOrder = maxOrder + 1;
 
@@ -331,6 +343,7 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
             books.forEach(b => {
                 if (!b.importOrder) b.importOrder = nextImportOrder++;
                 maxOrder = Math.max(maxOrder, b.importOrder);
+                setLastModifiedFromDateRead(b);
             });
             nextImportOrder = maxOrder + 1;
 
@@ -1096,7 +1109,7 @@ function parseCSV(text) {
         const exclusive = cols[idx("Exclusive Shelf")] || "read";
         let extraShelves = cols[idx("Bookshelves")] ? cols[idx("Bookshelves")].split(",").map(s => s.trim()) : [];
         extraShelves = extraShelves.filter(s => s !== exclusive);
-        books.push({
+        const book = {
             title: cols[idx("Title")],
             author: cols[idx("Author")],
             series: cols[idx("Series")] || "",
@@ -1110,7 +1123,9 @@ function parseCSV(text) {
             notes: cols[idx("My Review")] || "",
             importOrder: nextImportOrder++,
             lastModified: Date.now()
-        });
+        };
+        setLastModifiedFromDateRead(book);
+        books.push(book);
     }
     saveBooksToLocal();
     renderAll();
@@ -1124,7 +1139,7 @@ function importJSON(text) {
     books = data.books;
     books.forEach(b => {
         if (b.importOrder == null) b.importOrder = nextImportOrder++;
-        if (b.lastModified == null) b.lastModified = Date.now();
+        setLastModifiedFromDateRead(b);
     });
     nextImportOrder = books.reduce((m, b) => Math.max(m, b.importOrder ?? 0), 0) + 1;
     saveBooksToLocal();
