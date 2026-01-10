@@ -203,7 +203,7 @@ button.danger:hover {
 <h3>Manage Shelves</h3>
 <div id="shelfManager"></div>
 <hr style="border:1px solid #333; margin:16px 0;">
-Version 1.0.0.2
+Version 1.0.0.3
 </section>
 <!-- Edit Book Modal -->
 <div id="editModal" style="
@@ -315,19 +315,30 @@ document.getElementById("signOutBtn").addEventListener("click", () => {
 
 auth.onAuthStateChanged(user => {
     currentUser = user;
+    const signInBtn = document.getElementById("signInBtn");
+    const signUpBtn = document.getElementById("signUpBtn");
+    const signOutBtn = document.getElementById("signOutBtn");
+    const syncStatus = document.getElementById("syncStatus");
+
     if (user) {
         dbRef = db.ref("users/" + user.uid);
         loadFromFirebase();
 
+        // Update UI
+        signInBtn.style.display = "none";
+        signUpBtn.style.display = "none";
+        signOutBtn.style.display = "inline-block";
+        syncStatus.textContent = `Signed in as ${user.email}`;
     } else {
-        document.getElementById("signInBtn").style.display = "inline-block";
-        document.getElementById("signUpBtn").style.display = "inline-block";
-        document.getElementById("signOutBtn").style.display = "none";
-        document.getElementById("syncStatus").textContent = "Not signed in (local only)";
+        signInBtn.style.display = "inline-block";
+        signUpBtn.style.display = "inline-block";
+        signOutBtn.style.display = "none";
+        syncStatus.textContent = "Not signed in (local only)";
         if (dbRef) dbRef.off();
         dbRef = null;
     }
 });
+
 
 function saveToFirebase() {
     if (!currentUser || !dbRef) {
@@ -1322,4 +1333,5 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
