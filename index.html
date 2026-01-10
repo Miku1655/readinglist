@@ -30,7 +30,8 @@ tr:hover { background: #1f1f1f; }
 .stats-block h2 { margin: 0 0 10px 0; font-size: 1em; }
 .stats-grid { display: grid; grid-template-columns: auto auto; gap: 4px 16px; }
 .stats-list { font-size: 0.9em; }
-#statsChart { background: #1a1a1a; border: 1px solid #333; padding: 10px; border-radius: 6px; max-width: 900px; margin: 0 auto; }
+.stats-year-block { background: #1a1a1a; border: 1px solid #333; padding: 12px; margin-bottom: 20px; }
+#statsChart { background: #1a1a1a; border: 1px solid #333; padding: 10px; border-radius: 6px; max-width: 100%; height: 400px; margin: 0 auto; }
 .card-container { display: flex; flex-wrap: wrap; gap: 12px; }
 .book-card { background:#222; padding:10px; border:1px solid #444; border-radius:6px; width:160px; text-align:center; cursor:pointer; position:relative; height:100px; display:flex; flex-direction:column; justify-content:center; }
 .book-card:hover { background:#2a2a2a; }
@@ -48,6 +49,7 @@ button.danger:hover { background-color: #a83838; }
 #goalsSection { background: #1a1a1a; padding: 16px; border: 1px solid #333; border-radius: 8px; margin: 16px 0; }
 #goalsSection h3 { margin-top: 0; }
 #goalsSection .goals-inline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+#generalSettings { background: #1a1a1a; padding: 16px; border: 1px solid #333; border-radius: 8px; margin: 16px 0; }
 .hidden-date { font-size: 0.85em; color: #aaa; }
 .timeline-entry { margin-bottom: 16px; padding: 10px; background: #1a1a1a; border: 1px solid #333; border-radius: 6px; }
 .timeline-entry h4 { margin: 0 0 8px 0; }
@@ -137,7 +139,11 @@ button.danger:hover { background-color: #a83838; }
             <button id="removeGoal">Remove</button>
         </div>
     </div>
-    <label><input type="checkbox" id="showNumbers" checked> Show row numbers</label>
+    <div id="generalSettings">
+        <h3>General Settings</h3>
+        <label><input type="checkbox" id="showNumbers" checked> Show row numbers</label><br><br>
+        <label>Min books read for author avg rating: <input type="number" id="minAuthorBooks" min="1" value="2" style="width:80px;"></label>
+    </div>
     <hr style="border:1px solid #333; margin:16px 0;">
     <h3>Cloud Sync (Firebase - Manual only)</h3>
     <div id="syncStatus" style="margin-bottom:8px; color:#ccc;">Not signed in (local only)</div>
@@ -154,7 +160,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.4.0 – fixed note popup position, new Stats layout with records + favorite authors, advanced rating search, Timeline tab, DNF status
+    Version 1.4.2 – timeline now supports multiple read dates + locale month names
 </section>
 <!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
@@ -212,6 +218,7 @@ const goalYear = document.getElementById("goalYear");
 const yearBooksGoal = document.getElementById("yearBooksGoal");
 const yearPagesGoal = document.getElementById("yearPagesGoal");
 const cloudButtons = document.getElementById("cloudButtons");
+const minAuthorBooksInput = document.getElementById("minAuthorBooks");
 
 // Global state
 let currentUser = null;
@@ -226,10 +233,12 @@ const TAB_KEY = "reading_list_active_tab";
 const GOALS_KEY = "reading_goals_per_year";
 const SHELF_COLORS_KEY = "reading_shelf_colors";
 const PROFILE_KEY = "reading_list_profile";
+const MIN_AUTHOR_BOOKS_KEY = "reading_min_author_books";
 let shelfColors = {};
 let goals = {};
 let profile = { favourites: [], favouriteSeries: [] };
 let draggedElement = null;
+let minAuthorBooks = 2; // default
 
 // Helpers
 function getLatestReadTimestamp(book) {
@@ -302,7 +311,7 @@ function makeFavouritesDraggable(container) {
     container.addEventListener("drop", e => e.preventDefault());
 }
 
-// Note popup – fixed position (now appears below/right of cursor)
+// Note popup
 let notePopup = null;
 function createNotePopup() {
     notePopup = document.createElement("div");
@@ -315,7 +324,7 @@ function createNotePopup() {
     notePopup.style.zIndex = "3000";
     notePopup.style.display = "none";
     notePopup.style.maxWidth = "300px";
-    notePopup.style.pointerEvents = "none"; // don't interfere with mouse
+    notePopup.style.pointerEvents = "none";
     document.body.appendChild(notePopup);
     return notePopup;
 }
@@ -331,7 +340,7 @@ function hideNotePopup(popup) {
 function moveNotePopup(e) {
     if (!notePopup) return;
     notePopup.style.left = (e.clientX + 15) + "px";
-    notePopup.style.top = (e.clientY + 20) + "px"; // increased offset, placed below cursor
+    notePopup.style.top = (e.clientY + 20) + "px";
 }
 
 // Auth listener
@@ -390,6 +399,8 @@ function loadLocalData() {
     goals = JSON.parse(localStorage.getItem(GOALS_KEY) || "{}");
     shelfColors = JSON.parse(localStorage.getItem(SHELF_COLORS_KEY) || "{}");
     document.getElementById("showNumbers").checked = JSON.parse(localStorage.getItem(SHOW_NUM_KEY) || "true");
+    minAuthorBooks = Number(localStorage.getItem(MIN_AUTHOR_BOOKS_KEY)) || 2;
+    minAuthorBooksInput.value = minAuthorBooks;
     document.getElementById("profileNick").value = profile.nick || "";
     document.getElementById("profileBio").value = profile.bio || "";
     if (profile.picture) document.getElementById("profilePic").src = profile.picture;
@@ -399,21 +410,27 @@ function saveBooksToLocal() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
 }
 
-// Cloud save / load (unchanged – already fixed)
-document.getElementById("saveCloudBtn").addEventListener("click", () => {
-    if (!currentUser) return alert("Sign in first");
-    if (!confirm("Overwrite cloud data with current local data?")) return;
-    const dataToSave = {
-        books: books,
-        profile: profile,
-        goals: goals,
-        shelfColors: shelfColors,
-        settings: { showNumbers: document.getElementById("showNumbers").checked }
-    };
-    userRef.set(dataToSave)
-        .then(() => alert("Saved to cloud successfully!"))
-        .catch(err => alert("Save failed: " + err.message));
-});
+// Shelf filter population
+function populateShelfFilter() {
+    const select = document.getElementById("shelfFilter");
+    select.innerHTML = '<option value="all">all</option>';
+    const set = new Set();
+    books.forEach(b => {
+        if (b.exclusiveShelf) set.add(b.exclusiveShelf);
+        (b.shelves || []).forEach(s => set.add(s));
+    });
+    [...set].sort().forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = s;
+        select.appendChild(opt);
+    });
+    if (select.value !== "all" && ![...set].includes(select.value)) {
+        select.value = "all";
+    }
+}
+
+// Cloud load
 document.getElementById("loadCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite local data with cloud data? This cannot be undone.")) return;
@@ -489,7 +506,7 @@ function renderAll() {
     if (document.querySelector('.tab.active')?.dataset.tab === "options") renderShelfManager();
 }
 
-// Modal
+// Modal unchanged
 function openEditModal(book = null) {
     editingBook = book;
     document.getElementById("editTitle").value = book?.title || "";
@@ -522,7 +539,7 @@ function closeEditModal() {
     document.getElementById("editModal").style.display = "none";
 }
 
-// Table rendering
+// Table rendering unchanged
 function renderTable() {
     const showNumbers = document.getElementById("showNumbers").checked;
     const filter = document.getElementById("shelfFilter").value;
@@ -566,7 +583,7 @@ function renderTable() {
     });
 }
 
-// Sorting helpers
+// Sorting unchanged
 function compare(a, b, col) {
     let av = a[col];
     let bv = b[col];
@@ -612,7 +629,7 @@ function updateSortIndicators() {
     }
 }
 
-// Advanced search – added rating filters
+// Search unchanged
 function filterBooksByQuery(list, query) {
     const terms = query.toLowerCase().match(/\S+/g) || [];
     return list.filter(book => {
@@ -696,7 +713,7 @@ function calculatePerYear() {
     return perYear;
 }
 
-// New: Timeline rendering
+// Updated Timeline – locale month names + multiple appearances per book
 function renderTimeline() {
     const container = document.getElementById("timelineContainer");
     container.innerHTML = "";
@@ -705,31 +722,49 @@ function renderTimeline() {
         container.innerHTML = "<p>No reading history yet.</p>";
         return;
     }
-    // Group by year/month
-    const groups = {};
+
+    // Collect all read instances
+    const entries = [];
     readBooks.forEach(b => {
         const dates = b.dateRead.split(",").map(d => d.trim()).filter(Boolean);
-        const latest = new Date(Math.max(...dates.map(d => new Date(d))));
-        const year = latest.getFullYear();
-        const month = latest.toLocaleString('default', { month: 'long' });
-        const key = `${year} ${month}`;
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(b);
+        dates.forEach(dateStr => {
+            const dt = new Date(dateStr);
+            if (isNaN(dt)) return;
+            entries.push({ book: b, date: dt });
+        });
     });
+
+    if (entries.length === 0) {
+        container.innerHTML = "<p>No valid read dates.</p>";
+        return;
+    }
+
+    // Sort all entries descending by date
+    entries.sort((a, b) => b.date - a.date);
+
+    // Group by year-month
+    const groups = {};
+    const userLocale = navigator.language || 'en-US';
+    entries.forEach(entry => {
+        const year = entry.date.getFullYear();
+        const month = entry.date.toLocaleString(userLocale, { month: 'long' });
+        const key = `${year}-${entry.date.getMonth() + 1}`; // numeric for sorting
+        if (!groups[key]) groups[key] = { display: `${year} ${month}`, entries: [] };
+        groups[key].entries.push(entry);
+    });
+
     // Sort groups descending
-    const sortedKeys = Object.keys(groups).sort((a, b) => {
-        const da = new Date(a + " 1");
-        const db = new Date(b + " 1");
-        return db - da;
-    });
+    const sortedKeys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
     sortedKeys.forEach(key => {
+        const g = groups[key];
         const div = document.createElement("div");
         div.className = "timeline-entry";
-        div.innerHTML = `<h4>${key} (${groups[key].length} book${groups[key].length > 1 ? 's' : ''})</h4>`;
+        div.innerHTML = `<h4>${g.display} (${g.entries.length} read${g.entries.length > 1 ? 's' : ''})</h4>`;
         const ul = document.createElement("ul");
-        groups[key].sort((a, b) => getLatestReadTimestamp(b) - getLatestReadTimestamp(a)).forEach(b => {
+        g.entries.forEach(entry => {
             const li = document.createElement("li");
-            li.innerHTML = `<strong>${b.title}</strong> by ${b.author || "Unknown"} (${b.rating || "unrated"})`;
+            const readDate = entry.date.toLocaleDateString(userLocale);
+            li.innerHTML = `<strong>${entry.book.title}</strong> by ${entry.book.author || "Unknown"} (${entry.book.rating || "unrated"}) — finished ${readDate}`;
             ul.appendChild(li);
         });
         div.appendChild(ul);
@@ -737,7 +772,7 @@ function renderTimeline() {
     });
 }
 
-// Updated Stats – new layout + records + favorite authors
+// Stats unchanged except for minAuthorBooks usage (already in previous version)
 function renderStats() {
     const container = document.getElementById("stats");
     const ctx = document.getElementById("statsChart").getContext("2d");
@@ -756,7 +791,7 @@ function renderStats() {
     const pagesGoal = goals[selectedYear]?.pages || 0;
     const booksGoal = goals[selectedYear]?.books || 0;
 
-    // Favorite authors
+    // Favorite authors with min books filter
     const authorStats = {};
     readBooks.forEach(b => {
         const auth = b.author || "Unknown";
@@ -769,12 +804,12 @@ function renderStats() {
     });
     const topByCount = Object.entries(authorStats).sort((a, b) => b[1].count - a[1].count).slice(0, 10);
     const topByAvg = Object.entries(authorStats)
-        .filter(([, s]) => s.rated > 0)
-        .map(([a, s]) => [a, (s.ratingSum / s.rated).toFixed(2)])
+        .filter(([, s]) => s.count >= minAuthorBooks && s.rated > 0)
+        .map(([a, s]) => [a, (s.ratingSum / s.rated).toFixed(2), s.rated])
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10);
 
-    // Personal records
+    // Personal records unchanged
     let longest = null, shortest = null, mostReread = null;
     let maxYearBooks = 0, maxYearPages = 0, maxYearBooksYear = null, maxYearPagesYear = null;
     readBooks.forEach(b => {
@@ -788,8 +823,7 @@ function renderStats() {
     });
 
     let html = '<div class="stats-upper">';
-
-    // Overall Stats block
+    // Overall Stats
     html += '<div class="stats-block"><h2>Overall Stats</h2>';
     if (pagesGoal || booksGoal) {
         html += `<div style="background:#222; padding:12px; margin-bottom:12px; border-radius:6px;">
@@ -805,15 +839,16 @@ function renderStats() {
     html += `<div>Pages read (× count)</div><div>${pagesRead}</div>`;
     html += '</div></div>';
 
-    // Favorite Authors block
+    // Favorite Authors
     html += '<div class="stats-block"><h2>Favorite Authors</h2><div class="stats-list">';
     html += '<strong>By books read:</strong><br>';
     topByCount.forEach(([a, s]) => html += `• ${a}: ${s.count} book${s.count > 1 ? 's' : ''}<br>`);
-    html += '<br><strong>By average rating:</strong><br>';
-    topByAvg.forEach(([a, avg]) => html += `• ${a}: ${avg} (${authorStats[a].rated} rated)<br>`);
+    html += `<br><strong>By average rating (min ${minAuthorBooks} books):</strong><br>`;
+    if (topByAvg.length === 0) html += "No authors meet minimum<br>";
+    topByAvg.forEach(([a, avg, rated]) => html += `• ${a}: ${avg} (${rated} rated)<br>`);
     html += '</div></div>';
 
-    // Personal Records block
+    // Personal Records
     html += '<div class="stats-block"><h2>Personal Records</h2><div class="stats-list">';
     if (longest) html += `Longest book: <strong>${longest.title}</strong> (${longest.pages} pages)<br>`;
     if (shortest) html += `Shortest book: <strong>${shortest.title}</strong> (${shortest.pages} pages)<br>`;
@@ -822,17 +857,17 @@ function renderStats() {
     if (maxYearPagesYear) html += `Most pages in a year: ${maxYearPages} (${maxYearPagesYear})<br>`;
     html += '</div></div>';
 
-    html += '</div>'; // end stats-upper
+    html += '</div>'; // end upper
 
-    // Year breakdown
-    html += '<div class="stats-year">By year:<br>';
+    // Year breakdown in nice block
+    html += '<div class="stats-year-block"><h2>By Year</h2><div class="stats-list">';
     if (Object.keys(perYear).length === 0) html += "none";
     else Object.keys(perYear).sort((a,b)=>b-a).forEach(y => html += `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages<br>`);
-    html += '</div>';
+    html += '</div></div>';
 
     container.innerHTML = html;
 
-    // Chart
+    // Chart unchanged
     const labels = Object.keys(perYear).sort((a,b) => a - b);
     if (labels.length === 0) return;
     const booksData = labels.map(y => perYear[y].books);
@@ -845,6 +880,7 @@ function renderStats() {
         ]},
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             scales: {
                 y: { beginAtZero: true, position: 'left', ticks: { color: '#eee' }, grid: { color: '#333' } },
                 y1: { beginAtZero: true, position: 'right', ticks: { color: '#eee' }, grid: { drawOnChartArea: false } }
@@ -854,7 +890,7 @@ function renderStats() {
     });
 }
 
-// Updated profile average (only rated books)
+// Profile avg unchanged
 function renderProfileStats() {
     const container = document.getElementById("profileStats");
     const readBooks = books.filter(b => b.exclusiveShelf === "read");
@@ -871,7 +907,6 @@ function renderProfileStats() {
     `;
 }
 
-// Other render functions unchanged
 function renderShelfManager() {
     const container = document.getElementById("shelfManager");
     container.innerHTML = "";
@@ -979,7 +1014,7 @@ function renderFavourites() {
     if (!hasContent) container.innerHTML = "<p>No favourites yet.</p>";
 }
 
-// Goals unchanged
+// Goals + min author setting
 function loadGoalsForYear() {
     const year = Number(goalYear.value) || new Date().getFullYear();
     goalYear.value = year;
@@ -1013,7 +1048,12 @@ document.getElementById("removeGoal").addEventListener("click", () => {
     }
 });
 
-// Save edit – DNF doesn't affect lastFinished
+minAuthorBooksInput.addEventListener("change", () => {
+    minAuthorBooks = Math.max(1, Number(minAuthorBooksInput.value) || 2);
+    localStorage.setItem(MIN_AUTHOR_BOOKS_KEY, minAuthorBooks);
+    renderStats();
+});
+
 document.getElementById("saveEdit").addEventListener("click", () => {
     const now = Date.now();
     const data = {
