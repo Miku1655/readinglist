@@ -203,7 +203,7 @@ button.danger:hover {
 <h3>Manage Shelves</h3>
 <div id="shelfManager"></div>
 <hr style="border:1px solid #333; margin:16px 0;">
-Version 1.0.0.5
+Version 1.0.0.6
 </section>
 <!-- Edit Book Modal -->
 <div id="editModal" style="
@@ -341,6 +341,7 @@ auth.onAuthStateChanged(user => {
 
 
 function saveToFirebase() {
+    console.log("Current user:", currentUser);
     if (!currentUser || !dbRef) {
         showPopup("Not signed in.", false);
         return;
@@ -1362,6 +1363,7 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
 
 
