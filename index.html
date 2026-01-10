@@ -198,9 +198,12 @@ button.danger:hover {
 <button id="signInBtn">Sign In</button>
 <button id="signUpBtn" style="margin-left:8px;">Sign Up</button>
 <button id="signOutBtn" style="display:none; margin-left:8px;">Sign Out</button>
+<button id="saveCloudBtn" style="margin-bottom:12px;">Save to Cloud</button>
 <hr style="border:1px solid #333; margin:16px 0;">
 <h3>Manage Shelves</h3>
 <div id="shelfManager"></div>
+<hr style="border:1px solid #333; margin:16px 0;">
+Version 1.0
 </section>
 <!-- Edit Book Modal -->
 <div id="editModal" style="
@@ -308,43 +311,9 @@ document.getElementById("signOutBtn").addEventListener("click", () => {
 auth.onAuthStateChanged(user => {
     currentUser = user;
     if (user) {
-        document.getElementById("signInBtn").style.display = "none";
-        document.getElementById("signUpBtn").style.display = "none";
-        document.getElementById("signOutBtn").style.display = "inline-block";
-        document.getElementById("syncStatus").textContent = `Signed in as ${user.email} (sync active)`;
         dbRef = db.ref("users/" + user.uid);
         loadFromFirebase();
 
-        dbRef.on("value", snapshot => {
-            if (isApplyingRemote) return;
-
-            const data = snapshot.val();
-			if (!data) return;
-			
-			const localUpdated = Number(localStorage.getItem("lastUpdated") || 0);
-			if (data.lastUpdated && data.lastUpdated < localUpdated) return;
-			
-			isApplyingRemote = true;
-			
-			Object.keys(data).forEach(key => {
-			    if (key !== "lastUpdated") {
-			        localStorage.setItem(key, data[key]);
-			    }
-			});
-			localStorage.setItem("lastUpdated", data.lastUpdated || Date.now());
-			
-			loadFromStorage();
-            renderTable();
-            renderStats();
-            
-            if (document.querySelector(".tab.active")?.dataset.tab === "profile") {
-                renderProfileStats();
-                renderRecentBooks();
-                renderFavourites();
-            }
-
-            isApplyingRemote = false;
-        });
     } else {
         document.getElementById("signInBtn").style.display = "inline-block";
         document.getElementById("signUpBtn").style.display = "inline-block";
@@ -356,34 +325,49 @@ auth.onAuthStateChanged(user => {
 });
 
 function saveToFirebase() {
-    if (!currentUser || !dbRef || isApplyingRemote) return;
-    const data = {
-        [STORAGE_KEY]: localStorage.getItem(STORAGE_KEY) || "[]",
-        [PROFILE_KEY]: localStorage.getItem(PROFILE_KEY) || "{}",
-        [GOALS_KEY]: localStorage.getItem(GOALS_KEY) || "{}",
-        [SHELF_COLORS_KEY]: localStorage.getItem(SHELF_COLORS_KEY) || "{}",
-        [SHOW_NUM_KEY]: localStorage.getItem(SHOW_NUM_KEY) || "true",
-        [TAB_KEY]: localStorage.getItem(TAB_KEY) || "list"
-    };
-    dbRef.update({
-    ...data,
-    lastUpdated: Date.now()
-}).catch(err => console.error("Sync error:", err));
+    if (!currentUser || !dbRef) {
+        alert("Not signed in.");
+        return;
+    }
 
+    const data = {
+        books: localStorage.getItem(STORAGE_KEY) || "[]",
+        profile: localStorage.getItem(PROFILE_KEY) || "{}",
+        goals: localStorage.getItem(GOALS_KEY) || "{}",
+        shelfColors: localStorage.getItem(SHELF_COLORS_KEY) || "{}",
+        showNumbers: localStorage.getItem(SHOW_NUM_KEY) || "true",
+        activeTab: localStorage.getItem(TAB_KEY) || "list"
+    };
+
+    dbRef.set(data)
+        .then(() => alert("Saved to cloud."))
+        .catch(err => alert("Save failed: " + err.message));
 }
+
 
 function loadFromFirebase() {
     if (!currentUser || !dbRef) return;
+
     dbRef.once("value").then(snapshot => {
         const data = snapshot.val();
-        if (data) {
-            Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
-            loadFromStorage();
-            renderTable();
-            renderStats();
-        }
+        if (!data) return;
+
+        localStorage.setItem(STORAGE_KEY, data.books || "[]");
+        localStorage.setItem(PROFILE_KEY, data.profile || "{}");
+        localStorage.setItem(GOALS_KEY, data.goals || "{}");
+        localStorage.setItem(SHELF_COLORS_KEY, data.shelfColors || "{}");
+        localStorage.setItem(SHOW_NUM_KEY, data.showNumbers || "true");
+        localStorage.setItem(TAB_KEY, data.activeTab || "list");
+
+        loadFromStorage();
+        renderTable();
+        renderStats();
+        renderProfileStats();
+        renderRecentBooks();
+        renderFavourites();
     });
 }
+
 
 /* Storage */
 function saveToStorage() {
@@ -511,6 +495,8 @@ function switchTab(name) {
 }
 
 /* Controls */
+document.getElementById("saveCloudBtn")
+    .addEventListener("click", saveToFirebase);
 document.getElementById("fileInput").addEventListener("change", handleFile);
 document.getElementById("shelfFilter").addEventListener("change", renderTable);
 document.getElementById("showNumbers").addEventListener("change", () => {
@@ -557,7 +543,6 @@ document.getElementById("clearStorage").addEventListener("click", () => {
     renderProfileStats();
     renderRecentBooks();
     renderFavourites();
-	saveToFirebase();
 });
 document.getElementById("exportData").addEventListener("click", () => {
     const data = {
@@ -641,7 +626,6 @@ function parseCSV(text) {
         };
     }).filter(Boolean);
     saveToStorage();
-	saveToFirebase();
     populateShelfFilter();
     nextImportOrder = books.length;
     sortState.column = "importOrder";
@@ -665,7 +649,6 @@ function importJSON(text) {
     books = data.books;
     nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder ?? 0), 0) + 1;
     saveToStorage();
-	saveToFirebase();
     populateShelfFilter();
     renderTable();
     renderStats();
@@ -1346,6 +1329,3 @@ renderFavourites();
 </script>
 </body>
 </html>
-
-
-
