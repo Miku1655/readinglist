@@ -25,11 +25,12 @@ th, td { padding: 6px; border-bottom: 1px solid #333; text-align: left; }
 th { background: #1a1a1a; cursor: pointer; user-select: none; }
 tr:hover { background: #1f1f1f; }
 .sort { margin-left: 4px; opacity: 0.6; }
-#stats, #profileStats { background: #1a1a1a; border: 1px solid #333; padding: 12px; max-width: 600px; font-size: 0.9em; }
-#stats h2, #profileStats h2 { margin: 0 0 8px 0; font-size: 1em; }
-.stats-grid { display: grid; grid-template-columns: repeat(2, auto); gap: 4px 16px; margin-bottom: 10px; }
-.stats-year { margin-top: 6px; font-size: 0.85em; color: #ccc; }
-#statsChart { background: #1a1a1a; border: 1px solid #333; padding: 10px; border-radius: 6px; margin-top:20px; }
+.stats-upper { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+.stats-block { background: #1a1a1a; border: 1px solid #333; padding: 12px; flex: 1; min-width: 280px; max-height: 400px; overflow-y: auto; }
+.stats-block h2 { margin: 0 0 10px 0; font-size: 1em; }
+.stats-grid { display: grid; grid-template-columns: auto auto; gap: 4px 16px; }
+.stats-list { font-size: 0.9em; }
+#statsChart { background: #1a1a1a; border: 1px solid #333; padding: 10px; border-radius: 6px; max-width: 900px; margin: 0 auto; }
 .card-container { display: flex; flex-wrap: wrap; gap: 12px; }
 .book-card { background:#222; padding:10px; border:1px solid #444; border-radius:6px; width:160px; text-align:center; cursor:pointer; position:relative; height:100px; display:flex; flex-direction:column; justify-content:center; }
 .book-card:hover { background:#2a2a2a; }
@@ -48,6 +49,8 @@ button.danger:hover { background-color: #a83838; }
 #goalsSection h3 { margin-top: 0; }
 #goalsSection .goals-inline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
 .hidden-date { font-size: 0.85em; color: #aaa; }
+.timeline-entry { margin-bottom: 16px; padding: 10px; background: #1a1a1a; border: 1px solid #333; border-radius: 6px; }
+.timeline-entry h4 { margin: 0 0 8px 0; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -60,6 +63,7 @@ button.danger:hover { background-color: #a83838; }
     <button class="tab" data-tab="profile">Profile</button>
     <button class="tab active" data-tab="list">List</button>
     <button class="tab" data-tab="stats">Stats</button>
+    <button class="tab" data-tab="timeline">Timeline</button>
     <button class="tab" data-tab="options">Options</button>
 </div>
 <section id="tab-list" class="tab-content active">
@@ -90,6 +94,9 @@ button.danger:hover { background-color: #a83838; }
 <section id="tab-stats" class="tab-content">
     <div id="stats"></div>
     <canvas id="statsChart"></canvas>
+</section>
+<section id="tab-timeline" class="tab-content">
+    <div id="timelineContainer"></div>
 </section>
 <section id="tab-profile" class="tab-content">
     <div id="profileContainer" style="max-width:800px; margin:auto;">
@@ -147,7 +154,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.3.3 – fixed stats/chart fully, default recent sort newest first, add-book defaults improved
+    Version 1.4.0 – fixed note popup position, new Stats layout with records + favorite authors, advanced rating search, Timeline tab, DNF status
 </section>
 <!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
@@ -162,6 +169,7 @@ button.danger:hover { background-color: #a83838; }
                 <option value="read">read</option>
                 <option value="currently-reading">currently-reading</option>
                 <option value="to-read">to-read</option>
+                <option value="dnf">dnf</option>
             </select>
         </label><br>
         <label>Pages: <input type="number" id="editPages"></label><br>
@@ -211,7 +219,7 @@ let userRef = null;
 let editingBook = null;
 let books = [];
 let nextImportOrder = 1;
-let sortState = { column: null, direction: 1 }; // default newest first (direction 1 = descending timestamps)
+let sortState = { column: null, direction: 1 };
 const STORAGE_KEY = "reading_list_data";
 const SHOW_NUM_KEY = "reading_list_show_numbers";
 const TAB_KEY = "reading_list_active_tab";
@@ -294,7 +302,7 @@ function makeFavouritesDraggable(container) {
     container.addEventListener("drop", e => e.preventDefault());
 }
 
-// Note popup
+// Note popup – fixed position (now appears below/right of cursor)
 let notePopup = null;
 function createNotePopup() {
     notePopup = document.createElement("div");
@@ -307,6 +315,7 @@ function createNotePopup() {
     notePopup.style.zIndex = "3000";
     notePopup.style.display = "none";
     notePopup.style.maxWidth = "300px";
+    notePopup.style.pointerEvents = "none"; // don't interfere with mouse
     document.body.appendChild(notePopup);
     return notePopup;
 }
@@ -321,8 +330,8 @@ function hideNotePopup(popup) {
 }
 function moveNotePopup(e) {
     if (!notePopup) return;
-    notePopup.style.left = (e.clientX + 12) + "px";
-    notePopup.style.top = (e.clientY + 12) + "px";
+    notePopup.style.left = (e.clientX + 15) + "px";
+    notePopup.style.top = (e.clientY + 20) + "px"; // increased offset, placed below cursor
 }
 
 // Auth listener
@@ -390,7 +399,7 @@ function saveBooksToLocal() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
 }
 
-// Cloud save / load
+// Cloud save / load (unchanged – already fixed)
 document.getElementById("saveCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite cloud data with current local data?")) return;
@@ -412,25 +421,17 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
         .then(snap => {
             const data = snap.val();
             if (!data) return alert("No data in cloud");
-
-            // Load books from cloud
             let loadedBooks = data.books || [];
             if (!Array.isArray(loadedBooks)) loadedBooks = Object.values(loadedBooks);
             books = loadedBooks;
-
-            // === Migration / backfill (copied from loadLocalData, but without localStorage load) ===
             let maxOrder = 0;
             books.forEach(b => {
                 if (!b.importOrder) b.importOrder = nextImportOrder++;
                 maxOrder = Math.max(maxOrder, b.importOrder ?? 0);
-
-                // Migrate old fields
                 if (b.lastModified != null) {
                     if (b.bumpTime == null) b.bumpTime = b.lastModified;
                     delete b.lastModified;
                 }
-
-                // Backfill missing dates
                 if (b.exclusiveShelf === "currently-reading" && b.dateStarted == null) {
                     b.dateStarted = b.dateAdded ?? 0;
                 }
@@ -440,35 +441,24 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
                 }
             });
             nextImportOrder = maxOrder + 1;
-
-            // Clean up favourites (in case book IDs changed or books removed)
             profile = data.profile || { favourites: [], favouriteSeries: [] };
-            profile.favourites = (profile.favourites || []).filter(id => 
+            profile.favourites = (profile.favourites || []).filter(id =>
                 typeof id === 'number' && books.some(b => b.importOrder === id)
             );
-
-            // Load other data from cloud
             goals = data.goals || {};
             shelfColors = data.shelfColors || {};
             const settings = data.settings || {};
             document.getElementById("showNumbers").checked = settings.showNumbers ?? true;
-
-            // Update profile UI
             document.getElementById("profileNick").value = profile.nick || "";
             document.getElementById("profileBio").value = profile.bio || "";
             if (profile.picture) document.getElementById("profilePic").src = profile.picture;
-
-            // Save everything to localStorage
             saveBooksToLocal();
             localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
             localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
             localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
             localStorage.setItem(SHOW_NUM_KEY, document.getElementById("showNumbers").checked);
-
-            // Re-render everything
             renderAll();
-            loadGoalsForYear(); // in case goals tab is open
-
+            loadGoalsForYear();
             alert("Loaded from cloud successfully!");
         })
         .catch(err => alert("Load failed: " + err.message));
@@ -486,6 +476,7 @@ function switchTab(name) {
         renderRecentBooks();
         renderFavourites();
     }
+    if (name === "timeline") renderTimeline();
 }
 function renderAll() {
     populateShelfFilter();
@@ -494,6 +485,7 @@ function renderAll() {
     renderProfileStats();
     renderRecentBooks();
     renderFavourites();
+    renderTimeline();
     if (document.querySelector('.tab.active')?.dataset.tab === "options") renderShelfManager();
 }
 
@@ -520,7 +512,6 @@ function openEditModal(book = null) {
     } else {
         document.getElementById("favSeriesLabel").style.display = "none";
     }
-    // Hidden dates
     const today = new Date().toISOString().substring(0,10);
     document.getElementById("editDateAdded").value = book?.dateAdded ? new Date(book.dateAdded).toISOString().substring(0,10) : today;
     document.getElementById("editDateStarted").value = book?.dateStarted ? new Date(book.dateStarted).toISOString().substring(0,10) : "";
@@ -621,29 +612,24 @@ function updateSortIndicators() {
     }
 }
 
-// Other helpers
-function populateShelfFilter() {
-    const select = document.getElementById("shelfFilter");
-    select.innerHTML = '<option value="all">all</option>';
-    const set = new Set();
-    books.forEach(b => {
-        if (b.exclusiveShelf) set.add(b.exclusiveShelf);
-        (b.shelves || []).forEach(s => set.add(s));
-    });
-    [...set].sort().forEach(s => {
-        const opt = document.createElement("option");
-        opt.value = s;
-        opt.textContent = s;
-        select.appendChild(opt);
-    });
-}
+// Advanced search – added rating filters
 function filterBooksByQuery(list, query) {
     const terms = query.toLowerCase().match(/\S+/g) || [];
     return list.filter(book => {
         let match = true;
         for (const term of terms) {
             let m;
-            if ((m = term.match(/^count([<>=!]+)?(\d+)$/))) {
+            if ((m = term.match(/^rated([<>=!]+)?(\d+)$/))) {
+                let op = m[1] || "=";
+                const num = Number(m[2]);
+                const val = book.rating ?? 0;
+                if (op === ">") match = match && val > num;
+                else if (op === ">=") match = match && val >= num;
+                else if (op === "<") match = match && val < num;
+                else if (op === "<=") match = match && val <= num;
+                else if (op === "=" || op === "==") match = match && val === num;
+                else if (op === "!=") match = match && val !== num;
+            } else if ((m = term.match(/^count([<>=!]+)?(\d+)$/))) {
                 let op = m[1] || "=";
                 const num = Number(m[2]);
                 const val = book.readCount ?? 0;
@@ -686,7 +672,7 @@ function filterBooksByQuery(list, query) {
                 else if (op === "=") match = match && firstYear === num;
                 else if (op === "!=") match = match && firstYear !== num;
             } else {
-                const text = `${book.title} ${book.author} ${book.series || ""}`.toLowerCase();
+                const text = `${book.title} ${book.author} ${book.series || ""} ${book.notes || ""}`.toLowerCase();
                 match = match && text.includes(term);
             }
             if (!match) return false;
@@ -710,12 +696,171 @@ function calculatePerYear() {
     return perYear;
 }
 
-// Render functions
+// New: Timeline rendering
+function renderTimeline() {
+    const container = document.getElementById("timelineContainer");
+    container.innerHTML = "";
+    const readBooks = books.filter(b => b.exclusiveShelf === "read" && b.dateRead);
+    if (!readBooks.length) {
+        container.innerHTML = "<p>No reading history yet.</p>";
+        return;
+    }
+    // Group by year/month
+    const groups = {};
+    readBooks.forEach(b => {
+        const dates = b.dateRead.split(",").map(d => d.trim()).filter(Boolean);
+        const latest = new Date(Math.max(...dates.map(d => new Date(d))));
+        const year = latest.getFullYear();
+        const month = latest.toLocaleString('default', { month: 'long' });
+        const key = `${year} ${month}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(b);
+    });
+    // Sort groups descending
+    const sortedKeys = Object.keys(groups).sort((a, b) => {
+        const da = new Date(a + " 1");
+        const db = new Date(b + " 1");
+        return db - da;
+    });
+    sortedKeys.forEach(key => {
+        const div = document.createElement("div");
+        div.className = "timeline-entry";
+        div.innerHTML = `<h4>${key} (${groups[key].length} book${groups[key].length > 1 ? 's' : ''})</h4>`;
+        const ul = document.createElement("ul");
+        groups[key].sort((a, b) => getLatestReadTimestamp(b) - getLatestReadTimestamp(a)).forEach(b => {
+            const li = document.createElement("li");
+            li.innerHTML = `<strong>${b.title}</strong> by ${b.author || "Unknown"} (${b.rating || "unrated"})`;
+            ul.appendChild(li);
+        });
+        div.appendChild(ul);
+        container.appendChild(div);
+    });
+}
+
+// Updated Stats – new layout + records + favorite authors
+function renderStats() {
+    const container = document.getElementById("stats");
+    const ctx = document.getElementById("statsChart").getContext("2d");
+    if (window.statsChart && typeof window.statsChart.destroy === 'function') {
+        window.statsChart.destroy();
+    }
+    window.statsChart = null;
+
+    const perYear = calculatePerYear();
+    const readBooks = books.filter(b => b.exclusiveShelf === "read");
+    const dnfBooks = books.filter(b => b.exclusiveShelf === "dnf");
+    const pagesRead = readBooks.reduce((s, b) => s + (b.pages || 0) * Math.max(1, b.readCount || 1), 0);
+    const selectedYear = Number(goalYear.value) || new Date().getFullYear();
+    const currentPages = perYear[selectedYear]?.pages || 0;
+    const currentBooks = perYear[selectedYear]?.books || 0;
+    const pagesGoal = goals[selectedYear]?.pages || 0;
+    const booksGoal = goals[selectedYear]?.books || 0;
+
+    // Favorite authors
+    const authorStats = {};
+    readBooks.forEach(b => {
+        const auth = b.author || "Unknown";
+        if (!authorStats[auth]) authorStats[auth] = { count: 0, ratingSum: 0, rated: 0 };
+        authorStats[auth].count++;
+        if (b.rating > 0) {
+            authorStats[auth].ratingSum += b.rating;
+            authorStats[auth].rated++;
+        }
+    });
+    const topByCount = Object.entries(authorStats).sort((a, b) => b[1].count - a[1].count).slice(0, 10);
+    const topByAvg = Object.entries(authorStats)
+        .filter(([, s]) => s.rated > 0)
+        .map(([a, s]) => [a, (s.ratingSum / s.rated).toFixed(2)])
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+
+    // Personal records
+    let longest = null, shortest = null, mostReread = null;
+    let maxYearBooks = 0, maxYearPages = 0, maxYearBooksYear = null, maxYearPagesYear = null;
+    readBooks.forEach(b => {
+        if (!longest || b.pages > longest.pages) longest = b;
+        if (!shortest || (b.pages > 0 && b.pages < shortest.pages)) shortest = b;
+        if (!mostReread || b.readCount > mostReread.readCount) mostReread = b;
+    });
+    Object.entries(perYear).forEach(([y, s]) => {
+        if (s.books > maxYearBooks) { maxYearBooks = s.books; maxYearBooksYear = y; }
+        if (s.pages > maxYearPages) { maxYearPages = s.pages; maxYearPagesYear = y; }
+    });
+
+    let html = '<div class="stats-upper">';
+
+    // Overall Stats block
+    html += '<div class="stats-block"><h2>Overall Stats</h2>';
+    if (pagesGoal || booksGoal) {
+        html += `<div style="background:#222; padding:12px; margin-bottom:12px; border-radius:6px;">
+            <strong>${selectedYear} Goals</strong><br>
+            ${booksGoal ? `Books: ${currentBooks} / ${booksGoal}<br>` : ""}
+            ${pagesGoal ? `Pages: ${currentPages} / ${pagesGoal}` : ""}
+        </div>`;
+    }
+    html += '<div class="stats-grid">';
+    html += `<div>Total books</div><div>${books.length || 0}</div>`;
+    html += `<div>Read</div><div>${readBooks.length}</div>`;
+    html += `<div>DNF</div><div>${dnfBooks.length}</div>`;
+    html += `<div>Pages read (× count)</div><div>${pagesRead}</div>`;
+    html += '</div></div>';
+
+    // Favorite Authors block
+    html += '<div class="stats-block"><h2>Favorite Authors</h2><div class="stats-list">';
+    html += '<strong>By books read:</strong><br>';
+    topByCount.forEach(([a, s]) => html += `• ${a}: ${s.count} book${s.count > 1 ? 's' : ''}<br>`);
+    html += '<br><strong>By average rating:</strong><br>';
+    topByAvg.forEach(([a, avg]) => html += `• ${a}: ${avg} (${authorStats[a].rated} rated)<br>`);
+    html += '</div></div>';
+
+    // Personal Records block
+    html += '<div class="stats-block"><h2>Personal Records</h2><div class="stats-list">';
+    if (longest) html += `Longest book: <strong>${longest.title}</strong> (${longest.pages} pages)<br>`;
+    if (shortest) html += `Shortest book: <strong>${shortest.title}</strong> (${shortest.pages} pages)<br>`;
+    if (mostReread && mostReread.readCount > 1) html += `Most re-read: <strong>${mostReread.title}</strong> (${mostReread.readCount} times)<br>`;
+    if (maxYearBooksYear) html += `Most books in a year: ${maxYearBooks} (${maxYearBooksYear})<br>`;
+    if (maxYearPagesYear) html += `Most pages in a year: ${maxYearPages} (${maxYearPagesYear})<br>`;
+    html += '</div></div>';
+
+    html += '</div>'; // end stats-upper
+
+    // Year breakdown
+    html += '<div class="stats-year">By year:<br>';
+    if (Object.keys(perYear).length === 0) html += "none";
+    else Object.keys(perYear).sort((a,b)=>b-a).forEach(y => html += `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages<br>`);
+    html += '</div>';
+
+    container.innerHTML = html;
+
+    // Chart
+    const labels = Object.keys(perYear).sort((a,b) => a - b);
+    if (labels.length === 0) return;
+    const booksData = labels.map(y => perYear[y].books);
+    const pagesData = labels.map(y => perYear[y].pages);
+    window.statsChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [
+            { label: 'Books', data: booksData, backgroundColor: 'rgba(75, 192, 192, 0.6)', yAxisID: 'y' },
+            { label: 'Pages', data: pagesData, backgroundColor: 'rgba(153, 102, 255, 0.6)', yAxisID: 'y1' }
+        ]},
+        options: {
+            responsive: true,
+            scales: {
+                y: { beginAtZero: true, position: 'left', ticks: { color: '#eee' }, grid: { color: '#333' } },
+                y1: { beginAtZero: true, position: 'right', ticks: { color: '#eee' }, grid: { drawOnChartArea: false } }
+            },
+            plugins: { legend: { labels: { color: '#eee' } } }
+        }
+    });
+}
+
+// Updated profile average (only rated books)
 function renderProfileStats() {
     const container = document.getElementById("profileStats");
     const readBooks = books.filter(b => b.exclusiveShelf === "read");
+    const ratedBooks = readBooks.filter(b => b.rating > 0);
     const pagesRead = readBooks.reduce((s, b) => s + (b.pages || 0) * Math.max(1, b.readCount || 1), 0);
-    const avgRating = readBooks.length ? (readBooks.reduce((s, b) => s + (b.rating || 0), 0) / readBooks.length).toFixed(1) : "0.0";
+    const avgRating = ratedBooks.length ? (ratedBooks.reduce((s, b) => s + b.rating, 0) / ratedBooks.length).toFixed(1) : "-";
     container.innerHTML = `
         <h2>Reading Stats</h2>
         <div class="stats-grid">
@@ -725,6 +870,8 @@ function renderProfileStats() {
         </div>
     `;
 }
+
+// Other render functions unchanged
 function renderShelfManager() {
     const container = document.getElementById("shelfManager");
     container.innerHTML = "";
@@ -768,70 +915,6 @@ function renderShelfManager() {
             saveBooksToLocal();
             renderAll();
         });
-    });
-}
-function renderStats() {
-    const container = document.getElementById("stats");
-    const ctx = document.getElementById("statsChart").getContext("2d");
-    // Safe destroy
-    if (window.statsChart && typeof window.statsChart.destroy === 'function') {
-        window.statsChart.destroy();
-    }
-    window.statsChart = null;
-
-    container.innerHTML = "<p>Loading stats...</p>"; // temporary
-
-    const perYear = calculatePerYear();
-    const readBooks = books.filter(b => b.exclusiveShelf === "read");
-    const pagesRead = readBooks.reduce((s, b) => s + (b.pages || 0) * Math.max(1, b.readCount || 1), 0);
-    const selectedYear = Number(goalYear.value) || new Date().getFullYear();
-    const currentPages = perYear[selectedYear]?.pages || 0;
-    const currentBooks = perYear[selectedYear]?.books || 0;
-    const pagesGoal = goals[selectedYear]?.pages || 0;
-    const booksGoal = goals[selectedYear]?.books || 0;
-
-    let html = "";
-    if (pagesGoal || booksGoal) {
-        html += `
-            <div style="background:#222; padding:20px; border:1px solid #555; border-radius:8px; margin-bottom:30px; text-align:center;">
-                <h2>${selectedYear} Goals</h2>
-                ${booksGoal ? `<div style="font-size:1.4em; margin:10px 0;">Books read: ${currentBooks} / ${booksGoal}</div>` : ""}
-                ${pagesGoal ? `<div style="font-size:1.4em; margin:10px 0;">Pages read: ${currentPages} / ${pagesGoal}</div>` : ""}
-            </div>
-        `;
-    }
-    html += `
-        <h2>Overall Stats</h2>
-        <div class="stats-grid">
-            <div>Total books</div><div>${books.length || 0}</div>
-            <div>Read</div><div>${readBooks.length}</div>
-            <div>Pages read (× count)</div><div>${pagesRead}</div>
-        </div>
-        <div class="stats-year">By year:<br>${Object.keys(perYear).sort((a,b)=>b-a).map(y => `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages`).join("<br>") || "none"}</div>
-    `;
-    container.innerHTML = html;
-
-    const labels = Object.keys(perYear).sort((a,b) => a - b);
-    if (labels.length === 0) {
-        // No chart if no data
-        return;
-    }
-    const booksData = labels.map(y => perYear[y].books);
-    const pagesData = labels.map(y => perYear[y].pages);
-    window.statsChart = new Chart(ctx, {
-        type: 'bar',
-        data: { labels, datasets: [
-            { label: 'Books', data: booksData, backgroundColor: 'rgba(75, 192, 192, 0.6)', yAxisID: 'y' },
-            { label: 'Pages', data: pagesData, backgroundColor: 'rgba(153, 102, 255, 0.6)', yAxisID: 'y1' }
-        ]},
-        options: {
-            responsive: true,
-            scales: {
-                y: { beginAtZero: true, position: 'left', ticks: { color: '#eee' }, grid: { color: '#333' } },
-                y1: { beginAtZero: true, position: 'right', ticks: { color: '#eee' }, grid: { drawOnChartArea: false } }
-            },
-            plugins: { legend: { labels: { color: '#eee' } } }
-        }
     });
 }
 function renderRecentBooks() {
@@ -896,7 +979,7 @@ function renderFavourites() {
     if (!hasContent) container.innerHTML = "<p>No favourites yet.</p>";
 }
 
-// Goals
+// Goals unchanged
 function loadGoalsForYear() {
     const year = Number(goalYear.value) || new Date().getFullYear();
     goalYear.value = year;
@@ -930,7 +1013,7 @@ document.getElementById("removeGoal").addEventListener("click", () => {
     }
 });
 
-// Save edit
+// Save edit – DNF doesn't affect lastFinished
 document.getElementById("saveEdit").addEventListener("click", () => {
     const now = Date.now();
     const data = {
@@ -1005,7 +1088,7 @@ document.getElementById("saveEdit").addEventListener("click", () => {
     closeEditModal();
 });
 
-// Event listeners
+// Event listeners unchanged (except sortRecent default to newest)
 document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 document.getElementById("addBook").addEventListener("click", () => openEditModal());
 document.getElementById("searchInput").addEventListener("input", renderTable);
@@ -1016,7 +1099,7 @@ document.getElementById("sortRecent").addEventListener("click", () => {
         sortState.direction *= -1;
     } else {
         sortState.column = null;
-        sortState.direction = 1; // default to newest first when switching to recent
+        sortState.direction = 1;
     }
     updateSortIndicators();
     renderTable();
@@ -1111,7 +1194,8 @@ document.getElementById("editModal").addEventListener("click", e => {
 });
 document.getElementById("filterInfo").addEventListener("click", () => {
     alert(`Search syntax:
-• Normal words → title / author / series
+• Normal words → title / author / series / notes
+• rated>3 rated=0 (unrated) rated>=4 etc.
 • pages>300 pages<=100 pages=500
 • year>=-50 year<10 year=-500 (negative = BC)
 • count>1 (rereads)
@@ -1119,7 +1203,7 @@ document.getElementById("filterInfo").addEventListener("click", () => {
 Combine with spaces (AND).`);
 });
 
-// Import helpers
+// Import helpers unchanged
 function parseCSVLine(line) {
     const result = [];
     let field = "";
@@ -1193,4 +1277,3 @@ loadGoalsForYear();
 </script>
 </body>
 </html>
-
