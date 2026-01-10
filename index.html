@@ -254,63 +254,74 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
-
+	auth.getRedirectResult()
+  .then(result => {
+    if (result.user) {
+      console.log("Redirect sign-in successful:", result.user.uid);
+    }
+  })
+  .catch(error => {
+    console.error("Redirect sign-in error:", error);
+  });
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+    .catch(err => console.error("Auth persistence error:", err));
+	
 let currentUser = null;
 let dbRef = null;
 let isApplyingRemote = false;
+	
+// Sign in/out UI
+document.getElementById("signInBtn").addEventListener("click", async () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+	provider.setCustomParameters({ prompt: 'select_account' });
+	document.getElementById("signInBtn").disabled = true;
+    auth.signInWithRedirect(provider);
+});
 
-// 1. Set persistence immediately
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
-// 2. Handle the redirect result (This is the fix for mobile)
-// This catches the "handshake" from Google after the page reloads
-auth.getRedirectResult()
-    .then((result) => {
-        document.getElementById("signInBtn").disabled = false;
-        if (result.user) {
-            console.log("Redirect login success:", result.user.displayName);
-        }
-    })
-    .catch((error) => {
-        console.error("Redirect error:", error);
-        document.getElementById("signInBtn").disabled = false;
-        document.getElementById("syncStatus").textContent = "Sign in error: " + error.message;
-    });
+document.getElementById("signOutBtn").addEventListener("click", () => {
+    auth.signOut();
+});
+document.getElementById("profileNick").addEventListener("input", e => {
+    profile.nick = e.target.value;
+    scheduleProfileSave();
+});
 
-// 3. Monitor Auth State
+document.getElementById("profileBio").addEventListener("input", e => {
+    profile.bio = e.target.value;
+    scheduleProfileSave();
+});
+
+	
 auth.onAuthStateChanged(user => {
     currentUser = user;
     if (user) {
         document.getElementById("signInBtn").style.display = "none";
         document.getElementById("signOutBtn").style.display = "inline-block";
-        document.getElementById("syncStatus").textContent = `Signed in as ${user.displayName || user.email}`;
-        
+        document.getElementById("syncStatus").textContent = `Signed in as ${user.displayName || user.email} (sync active)`;
         dbRef = db.ref("users/" + user.uid);
-        
-        // Load data once on sign-in
         loadFromFirebase();
 
-        // Listen for remote changes
-        dbRef.on("value", snapshot => {
-            if (isApplyingRemote) return;
-            const data = snapshot.val();
-            if (!data) return;
+dbRef.on("value", snapshot => {
+    if (isApplyingRemote) return;
 
-            isApplyingRemote = true;
-            Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
-            
-            // Refresh UI with new data
-            loadFromStorage();
-            renderTable();
-            renderStats();
-            
-            if (document.querySelector(".tab.active")?.dataset.tab === "profile") {
-                renderProfileStats();
-                renderRecentBooks();
-                renderFavourites();
-            }
-            isApplyingRemote = false;
-        });
+    const data = snapshot.val();
+    if (!data) return;
+
+    isApplyingRemote = true;
+    Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
+    loadFromStorage();
+    renderTable();
+    renderStats();
+	
+    if (document.querySelector(".tab.active")?.dataset.tab === "profile") {
+        renderProfileStats();
+        renderRecentBooks();
+        renderFavourites();
+    }
+
+    isApplyingRemote = false;
+});
 
     } else {
         document.getElementById("signInBtn").style.display = "inline-block";
@@ -321,35 +332,6 @@ auth.onAuthStateChanged(user => {
     }
 });
 
-// Sign in/out UI Listeners
-document.getElementById("signInBtn").addEventListener("click", () => {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    document.getElementById("signInBtn").disabled = true;
-    auth.signInWithRedirect(provider);
-});
-
-document.getElementById("signOutBtn").addEventListener("click", () => {
-    auth.signOut().then(() => {
-        location.reload(); // Hard refresh on sign out to clear state
-    });
-});
-
-// Helper: Load data from Firebase into LocalStorage
-function loadFromFirebase() {
-    if (!currentUser || !dbRef) return;
-    dbRef.once("value").then(snapshot => {
-        const data = snapshot.val();
-        if (data) {
-            Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
-            loadFromStorage();
-            renderTable();
-            renderStats();
-        }
-    });
-}
-
-// Helper: Save current LocalStorage to Firebase
 function saveToFirebase() {
     if (!currentUser || !dbRef || isApplyingRemote) return;
     const data = {
@@ -362,6 +344,54 @@ function saveToFirebase() {
     };
     dbRef.set(data).catch(err => console.error("Sync error:", err));
 }
+
+function loadFromFirebase() {
+    if (!currentUser || !dbRef) return;
+    dbRef.once("value").then(snapshot => {
+        const data = snapshot.val();
+        if (data) {
+            Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
+			loadFromStorage();
+			renderTable();
+			renderStats();
+        }
+    });
+}
+
+/* Storage */
+function saveToStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(books)); }
+function loadFromStorage() {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    books = JSON.parse(saved);
+    nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder ?? 0), 0) + 1;
+    populateShelfFilter();
+    renderTable();
+}
+	
+// Hook all save functions to also save to Firebase
+const originalSaveToStorage = saveToStorage;
+saveToStorage = function() {
+    originalSaveToStorage();
+    saveToFirebase();
+};
+
+function saveProfile() {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    saveToFirebase();
+}
+
+// Override other saves that directly touch localStorage
+// (goals, shelf colors, show numbers, tab — they already call saveToFirebase via hooks or add below)
+document.getElementById("saveGoal").addEventListener("click", () => {
+    // ... existing code ...
+    localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
+    saveToFirebase(); // add this line
+});
+// Add saveToFirebase() at end of shelf color input, showNumbers change, etc. if needed
+// But most are covered by saveToStorage or direct hooks above
+
+// On load, if signed in, we already load from Firebase
 // === FIREBASE SYNC END ===
 
 let books = [];
@@ -1282,3 +1312,8 @@ renderFavourites();
 </script>
 </body>
 </html>
+
+
+
+
+
