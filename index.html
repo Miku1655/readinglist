@@ -2,276 +2,246 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reading List</title>
+<style>
+body {
+    font-family: system-ui, sans-serif;
+    background: #111;
+    color: #eee;
+    padding: 20px;
+}
+h1 { font-size: 1.6em; margin-bottom: 6px; }
+.tabs { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 12px; }
+.tab { padding: 6px 12px; background: #1a1a1a; border: 1px solid #333; color: #ccc; cursor: pointer; }
+.tab.active { background: #222; color: #fff; border-color: #555; }
+.tab:hover { background: #2a2a2a; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.tab-content.active table {
+    display: table;
+}
+input, select { margin: 8px 0; padding: 6px; background: #222; color: #eee; border: 1px solid #444; }
+button { margin-left: 8px; padding: 6px 10px; background: #222; color: #eee; border: 1px solid #444; cursor: pointer; }
+button:hover { background: #2a2a2a; }
+table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; }
+th, td { padding: 6px; border-bottom: 1px solid #333; text-align: left; }
+th { background: #1a1a1a; cursor: pointer; user-select: none; }
+tr:hover { background: #1f1f1f; }
+.sort { margin-left: 4px; opacity: 0.6; }
+#stats { background: #1a1a1a; border: 1px solid #333; padding: 12px; max-width: 600px; font-size: 0.9em; }
+#stats h2 { margin: 0 0 8px 0; font-size: 1em; }
+.stats-grid { display: grid; grid-template-columns: repeat(2, auto); gap: 4px 16px; margin-bottom: 10px; }
+.stats-year { margin-top: 6px; font-size: 0.85em; color: #ccc; }
+#editModal div::-webkit-scrollbar {
+    width: 8px;
+}
+#editModal div::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+#editModal div::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+#editModal div::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}
+.modal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.modal-actions-right {
+    display: flex;
+    gap: 8px;
+}
+button.danger {
+    background-color: #8b2c2c;
+    color: white;
+    border: none;
+}
+button.danger:hover {
+    background-color: #a83838;
+}
+#statsChart {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    padding: 10px;
+    border-radius: 6px;
+}
+.profile-recent-section h4 {
+    margin: 16px 0 8px 0;
+    font-size: 1em;
+    color: #ccc;
+}
+.profile-book-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+    font-size: 0.85em;
+}
+.profile-book-author {
+    font-size: 0.8em;
+    color: #bbb;
+}
+
+</style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-<style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: #111; color: #eee; padding: 20px; margin: 0; }
-    h1 { font-size: 1.6em; margin-bottom: 12px; }
-    
-    /* Tabs */
-    .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 12px; }
-    .tab { padding: 8px 16px; background: #1a1a1a; border: 1px solid #333; color: #ccc; cursor: pointer; border-radius: 4px; }
-    .tab.active { background: #333; color: #fff; border-color: #555; font-weight: bold; }
-    .tab:hover { background: #2a2a2a; }
-    
-    .tab-content { display: none; animation: fadeIn 0.3s; }
-    .tab-content.active { display: block; }
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-    /* Forms & Inputs */
-    input, select, textarea { margin: 8px 0; padding: 8px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; width: 100%; box-sizing: border-box; }
-    input[type="checkbox"] { width: auto; margin-right: 8px; }
-    label { display: block; margin-bottom: 8px; color: #ccc; }
-    
-    button { padding: 8px 14px; background: #333; color: #eee; border: 1px solid #555; cursor: pointer; border-radius: 4px; transition: background 0.2s; }
-    button:hover { background: #444; }
-    button.primary { background: #2c5282; border-color: #4299e1; }
-    button.primary:hover { background: #2b6cb0; }
-    button.danger { background: #742a2a; border-color: #e53e3e; }
-    button.danger:hover { background: #9b2c2c; }
-    
-    /* Table */
-    .table-container { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; min-width: 600px; }
-    th, td { padding: 10px; border-bottom: 1px solid #333; text-align: left; }
-    th { background: #1a1a1a; cursor: pointer; user-select: none; white-space: nowrap; }
-    th:hover { background: #252525; }
-    tr:hover { background: #1f1f1f; }
-    .sort { margin-left: 4px; opacity: 0.6; font-size: 0.8em; }
-    
-    /* Tags */
-    .tag { display: inline-block; padding: 2px 6px; margin: 2px; border-radius: 4px; font-size: 0.85em; background: #333; }
-
-    /* Profile Grid */
-    .profile-header { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; }
-    .profile-pic-container { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
-    .profile-pic { width: 100px; height: 100px; object-fit: cover; border-radius: 50%; border: 3px solid #444; background: #222; cursor: pointer; }
-    
-    .stats-card { background: #1a1a1a; border: 1px solid #333; padding: 15px; border-radius: 8px; flex: 1; min-width: 200px; margin-bottom: 10px; }
-    .stats-value { font-size: 1.5em; font-weight: bold; color: #fff; }
-    .stats-label { color: #888; font-size: 0.9em; }
-
-    .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 10px; }
-    .book-card { background: #1e1e1e; border: 1px solid #333; padding: 8px; border-radius: 6px; cursor: pointer; transition: transform 0.2s; height: 100%; display: flex; flex-direction: column; }
-    .book-card:hover { transform: translateY(-2px); border-color: #555; }
-    .book-title { font-weight: bold; font-size: 0.9em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 4px; }
-    .book-author { font-size: 0.8em; color: #999; margin-top: auto; }
-
-    .profile-section-title { font-size: 0.95em; color: #bbb; text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 12px 0; border-bottom: 1px solid #333; padding-bottom: 6px; }
-
-    /* Modal */
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
-    .modal-content { background: #222; padding: 24px; border: 1px solid #444; border-radius: 8px; max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-    .modal-header { font-size: 1.2em; font-weight: bold; margin-bottom: 16px; border-bottom: 1px solid #333; padding-bottom: 8px; }
-    .modal-footer { display: flex; justify-content: space-between; margin-top: 20px; padding-top: 16px; border-top: 1px solid #333; }
-
-    /* Popups */
-    .note-popup { display: none; position: absolute; background: #2d2d2d; border: 1px solid #555; padding: 10px; border-radius: 4px; max-width: 300px; z-index: 2000; box-shadow: 0 4px 12px rgba(0,0,0,0.4); font-size: 0.9em; pointer-events: none; }
-    
-    @media (max-width: 600px) {
-        .tabs { justify-content: center; }
-        .tab { flex: 1; text-align: center; }
-        .profile-header { flex-direction: column; align-items: center; text-align: center; }
-        input[style*="width:300px"] { width: 100% !important; }
-    }
-</style>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 </head>
 <body>
-
 <h1>Reading List</h1>
-
-<!-- Auth Status Bar -->
-<div style="background: #1a1a1a; padding: 10px; border-radius: 6px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-    <span id="syncStatus">Loading local data...</span>
-    <div>
-        <button id="signInBtn" class="primary" style="display:none;">Sign in with Google</button>
-        <button id="signOutBtn" style="display:none;">Sign Out</button>
-    </div>
-</div>
-
 <div class="tabs">
-    <button class="tab active" data-tab="list">List</button>
     <button class="tab" data-tab="profile">Profile</button>
+    <button class="tab active" data-tab="list">List</button>
     <button class="tab" data-tab="stats">Stats</button>
     <button class="tab" data-tab="options">Options</button>
 </div>
-
-<!-- LIST TAB -->
 <section id="tab-list" class="tab-content active">
-    <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 15px;">
-        <div style="flex: 1; min-width: 200px;">
-            <label style="margin-bottom: 4px; font-size: 0.85em;">Search:</label>
-            <input type="text" id="searchInput" placeholder="Search title, author..." style="margin: 0;">
-        </div>
-        <div style="min-width: 150px;">
-            <label style="margin-bottom: 4px; font-size: 0.85em;">Shelf:</label>
-            <select id="shelfFilter" style="margin: 0;"></select>
-        </div>
-        <button id="sortRecentBtn">Recent ↓</button>
-<button id="addBook" class="primary">Add Book</button>
-    </div>
-
-    <div class="table-container">
-        <table>
-            <thead>
-                <tr>
-                    <th data-col="title">Title <span class="sort"></span></th>
-                    <th data-col="rating">Rtg <span class="sort"></span></th>
-                    <th data-col="author">Author <span class="sort"></span></th>
-                    <th data-col="shelves">Shelves</th>
-                    <th data-col="pages">Pgs <span class="sort"></span></th>
-                    <th data-col="year">Yr <span class="sort"></span></th>
-                    <th data-col="dateRead">Read <span class="sort"></span></th>
-                    <th data-col="readCount">Cnt <span class="sort"></span></th>
-                    <th>Edit</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-        </table>
-    </div>
+    <label>
+    Filter by shelf:
+    <select id="shelfFilter"></select>
+</label>
+<button id="sortRecent" style="margin-left: 12px;">Sort by Recent</button>
+<button id="addBook" style="margin-top:12px;">Add New Book</button>
+<label style="margin-left:15px">
+    Search: <input type="text" id="searchInput" style="width:300px" placeholder="Search title, author, series or use filters">
+<span id="filterInfo" style="margin-left:5px; cursor:help; color:#888;">?</span>
+</label>
+    <table>
+        <thead>
+            <tr>
+                <th data-col="title">Title <span class="sort"></span></th>
+<th data-col="rating">Rating <span class="sort"></span></th>
+                <th data-col="author">Author <span class="sort"></span></th>
+                <th data-col="shelves">Shelves <span class="sort"></span></th>
+                <th data-col="pages">Pages <span class="sort"></span></th>
+                <th data-col="year">Year <span class="sort"></span></th>
+                <th data-col="dateRead">Date Read <span class="sort"></span></th>
+                <th data-col="readCount">Read Count <span class="sort"></span></th>
+<th>Edit</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
 </section>
-
-<!-- PROFILE TAB -->
+<section id="tab-stats" class="tab-content">
+    <div id="stats"></div>
+    <canvas id="statsChart" style="max-width:600px; margin-top:20px;"></canvas>
+</section>
 <section id="tab-profile" class="tab-content">
-    <div style="max-width: 800px; margin: 0 auto;">
-        <div class="profile-header">
-            <div class="profile-pic-container">
-                <img id="profilePic" class="profile-pic" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23555'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E">
+    <div id="profileContainer" style="max-width:800px; margin:auto;">
+        <div style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
+            <div>
+                <img id="profilePic" src="" alt="Profile Picture" style="width:100px;height:100px;object-fit:cover;border:2px solid #555; cursor:pointer;">
                 <input type="file" id="profilePicInput" accept="image/*" style="display:none;">
             </div>
-            <div style="flex: 1; width: 100%;">
-                <input type="text" id="profileNick" placeholder="Nickname" style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px;">
-                <textarea id="profileBio" placeholder="Tell us about yourself..." style="height: 60px;"></textarea>
+            <div style="flex:1;">
+                <input type="text" id="profileNick" placeholder="Nickname" style="width:100%; margin-bottom:8px; padding:6px; background:#222; color:#eee; border:1px solid #444;">
+                <textarea id="profileBio" placeholder="Bio" style="width:100%; padding:6px; background:#222; color:#eee; border:1px solid #444; resize:vertical; height:60px;"></textarea>
             </div>
         </div>
-
-        <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
-            <div class="stats-card">
-                <div id="profileTotalBooks" class="stats-value">0</div>
-                <div class="stats-label">Books Read</div>
-            </div>
-            <div class="stats-card">
-                <div id="profileTotalPages" class="stats-value">0</div>
-                <div class="stats-label">Pages Read</div>
-            </div>
+        <div id="profileStats" style="background:#1a1a1a; border:1px solid #333; padding:12px; margin-bottom:16px;">
+            <!-- stats cards go here -->
         </div>
-
-        <div id="recentBooksContainer"></div>
-
-        <h3 class="profile-section-title" style="margin-top: 30px;">Favourites</h3>
-        <div id="favouritesContainer" class="book-grid"></div>
+        <div id="profileRecent" class="profile-recent-section" style="margin-bottom:16px;">
+            <h3>Recent Books</h3>
+            <div id="recentBooksContainer" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+        </div>
+        <div id="profileFavourites">
+            <h3>Favourites</h3>
+            <div id="favouritesContainer" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+        </div>
     </div>
 </section>
-
-<!-- STATS TAB -->
-<section id="tab-stats" class="tab-content">
-    <div class="stats-card" style="max-width: 800px; margin: 0 auto;">
-        <canvas id="statsChart"></canvas>
-    </div>
-    <div id="textStats" style="margin-top: 20px; max-width: 800px; margin-left: auto; margin-right: auto;"></div>
-</section>
-
-<!-- OPTIONS TAB -->
 <section id="tab-options" class="tab-content">
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h3>Import / Export</h3>
-        <div style="background: #222; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <label>Import JSON/CSV:</label>
-            <input type="file" id="fileInput" accept=".csv,.json">
-            <div style="margin-top: 10px;">
-                <button id="exportData">Export Backup</button>
-                <button id="clearStorage" class="danger" style="margin-left: 10px;">Clear All Data</button>
-            </div>
-        </div>
-
-        <h3>Goals</h3>
-        <div style="background: #222; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <div style="display: flex; gap: 10px;">
-                <div style="flex:1"><label>Year</label><input type="number" id="goalYear" value="2026"></div>
-                <div style="flex:1"><label>Book Goal</label><input type="number" id="yearBooksGoal"></div>
-                <div style="flex:1"><label>Page Goal</label><input type="number" id="yearGoal"></div>
-            </div>
-            <button id="saveGoal" class="primary" style="margin-top: 10px;">Save Goal</button>
-        </div>
-
-        <h3>Settings</h3>
-        <div style="background: #222; padding: 15px; border-radius: 8px;">
-            <label><input type="checkbox" id="showNumbers"> Show Row Numbers in List</label>
-        </div>
-
-        <h3>Manage Shelves</h3>
-        <div style="background: #222; padding: 15px; border-radius: 8px;">
-            <div id="shelfManager"></div>
-        </div>
-    </div>
+<h3>Import / Export</h3>
+<label>
+    Import list:
+    <input type="file" id="fileInput" accept=".csv,.json">
+</label>
+<button id="exportData">Export list</button>
+<button id="clearStorage" style="margin-left:12px;">Clear local list data</button>
+<hr style="border:1px solid #333; margin:16px 0;">
+    <label>
+        Year for goals:
+        <input type="number" id="goalYear" style="width:80px;" value="2026">
+    </label>
+    <br>
+    <label>
+        Yearly pages goal:
+        <input type="number" id="yearGoal" style="width:100px;">
+    </label>
+    <br>
+    <label>
+        Yearly books goal:
+        <input type="number" id="yearBooksGoal" style="width:100px;">
+    </label>
+    <br>
+    <button id="saveGoal">Save</button>
+<button id="removeGoal" style="margin-left:12px;">Remove goals for year</button>
+<br>
+<hr style="border:1px solid #333; margin:16px 0;">
+<label>
+<h3>Other options</h3>
+<label>
+    <input type="checkbox" id="showNumbers" checked>
+    Show numbers
+</label>
+<hr style="border:1px solid #333; margin:16px 0;">
+<h3>Cloud Sync (Firebase)</h3>
+<div id="syncStatus" style="margin-bottom:8px; color:#ccc;">Not signed in</div>
+<button id="signInBtn">Sign in with Google</button>
+<button id="signOutBtn" style="display:none; margin-left:8px;">Sign Out</button>
+<hr style="border:1px solid #333; margin:16px 0;">
+<h3>Manage Shelves</h3>
+<div id="shelfManager"></div>
 </section>
-
-<!-- EDIT MODAL -->
-<div id="editModal" class="modal-overlay">
-    <div class="modal-content">
-        <div class="modal-header">Edit Book</div>
-        
-        <label>Title <input type="text" id="editTitle"></label>
-        <label>Author <input type="text" id="editAuthor"></label>
-        <div style="display: flex; gap: 10px;">
-            <div style="flex:1"><label>Series <input type="text" id="editSeries"></label></div>
-            <div style="flex:1"><label>Pages <input type="number" id="editPages"></label></div>
-        </div>
-
-        <label>Shelves (comma separated) <input type="text" id="editShelves"></label>
-        
-        <div style="display: flex; gap: 10px;">
-            <div style="flex:1">
-                <label>Status
-                    <select id="editExclusiveShelf">
-                        <option value="read">read</option>
-                        <option value="currently-reading">currently-reading</option>
-                        <option value="to-read">to-read</option>
-                    </select>
-                </label>
-            </div>
-            <div style="flex:1">
-                <label>Rating (0-5) <input type="number" id="editRating" min="0" max="5"></label>
-            </div>
-        </div>
-
-        <div style="display: flex; gap: 10px;">
-            <div style="flex:1"><label>Date Read <input type="text" id="editDateRead" placeholder="YYYY-MM-DD"></label></div>
-            <div style="flex:1"><label>Read Count <input type="number" id="editReadCount"></label></div>
-            <div style="flex:1"><label>Year Pub <input type="number" id="editYear"></label></div>
-        </div>
-
-        <div style="margin-top: 10px; background: #333; padding: 10px; border-radius: 4px;">
-            <label style="margin-bottom:4px; font-weight:bold;">Favourites Options</label>
-            <label style="margin-bottom:0; display: flex; align-items: center;">
-                <input type="checkbox" id="editFavourite"> Add to Favourites
-            </label>
-            <label style="margin-bottom:0; margin-top:4px; display: flex; align-items: center; font-size: 0.9em; color:#ccc;">
-                <input type="checkbox" id="editShowSeriesFav"> Show Series Name in Favourites
-            </label>
-        </div>
-        
-        <label style="margin-top:10px;">Notes <textarea id="editNotes"></textarea></label>
-        
-        <div class="modal-footer">
-            <button id="removeBook" class="danger">Delete Book</button>
-            <div style="display: flex; gap: 10px;">
-                <button id="closeEdit">Cancel</button>
-                <button id="saveEdit" class="primary">Save Changes</button>
-            </div>
-        </div>
+<!-- Edit Book Modal -->
+<div id="editModal" style="
+    display:none;
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.85); color:#eee;
+    justify-content:center; align-items:center;
+    z-index:1000; padding:20px;
+">
+    <div style="
+    background:#222; padding:20px; border:1px solid #444; max-width:500px; width:100%;
+    position:relative; max-height:80vh; overflow-y:auto;
+    ">
+        <h3>Edit Book</h3>
+        <label>Title: <input type="text" id="editTitle" style="width:100%;"></label><br>
+        <label>Author: <input type="text" id="editAuthor" style="width:100%;"></label><br>
+        <label>Series: <input type="text" id="editSeries" style="width:100%;"></label><br>
+<label>Shelves (comma separated): <input type="text" id="editShelves" style="width:100%;"></label><br>
+        <label>Status:
+    <select id="editExclusiveShelf" style="width:100%;">
+        <option value="read">read</option>
+        <option value="currently-reading">currently-reading</option>
+        <option value="to-read">to-read</option>
+    </select>
+</label><br>
+        <label>Pages: <input type="number" id="editPages" style="width:100%;"></label><br>
+        <label>Year: <input type="number" id="editYear" style="width:100%;"></label><br>
+        <label>Date Read(s) (comma separated): <input type="text" id="editDateRead" style="width:100%;"></label><br>
+        <label>Read Count: <input type="number" id="editReadCount" style="width:100%;"></label><br>
+<label>Rating: <input type="number" id="editRating" style="width:100%;" min="0" max="5"></label><br>
+<label>Favourite: <input type="checkbox" id="editFavourite"></label><br>
+<textarea id="editNotes" style="width:100%; height:80px; background:#222; color:#eee; border:1px solid #444; padding:6px; resize:vertical;">Notes</textarea>
+       
+<div class="modal-footer">
+    <button id="removeBook" class="danger">Remove</button>
+    <div class="modal-actions-right">
+        <button id="saveEdit">Save</button>
+        <button id="closeEdit">Close</button>
     </div>
 </div>
-
+    </div>
+</div>
 <script>
-/**
- * 1. INITIALIZATION & GLOBAL VARIABLES
- * Defining these at the very top prevents "ReferenceError" during Firebase callbacks.
- */
+// === FIREBASE SYNC START ===
 const firebaseConfig = {
   apiKey: "AIzaSyA8UlXHK1HPSeKAuCfEquonyjnT24ZWjcA",
   authDomain: "readinglist-75c4a.firebaseapp.com",
@@ -281,7 +251,143 @@ const firebaseConfig = {
   appId: "1:717466374536:web:a331148d9d3c378dd0ea3d"
 };
 
-// Keys for LocalStorage
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const auth = firebase.auth();
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+    .catch(err => console.error("Auth persistence error:", err));
+	
+let currentUser = null;
+let dbRef = null;
+let isApplyingRemote = false;
+	
+// Sign in/out UI
+document.getElementById("signInBtn").addEventListener("click", async () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+	provider.setCustomParameters({ prompt: 'select_account' });
+	document.getElementById("signInBtn").disabled = true;
+    auth.signInWithRedirect(provider);
+});
+
+
+document.getElementById("signOutBtn").addEventListener("click", () => {
+    auth.signOut();
+});
+document.getElementById("profileNick").addEventListener("input", e => {
+    profile.nick = e.target.value;
+    scheduleProfileSave();
+});
+
+document.getElementById("profileBio").addEventListener("input", e => {
+    profile.bio = e.target.value;
+    scheduleProfileSave();
+});
+
+	
+auth.onAuthStateChanged(user => {
+    currentUser = user;
+    if (user) {
+        document.getElementById("signInBtn").style.display = "none";
+        document.getElementById("signOutBtn").style.display = "inline-block";
+        document.getElementById("syncStatus").textContent = `Signed in as ${user.displayName || user.email} (sync active)`;
+        dbRef = db.ref("users/" + user.uid);
+        loadFromFirebase();
+
+dbRef.on("value", snapshot => {
+    if (isApplyingRemote) return;
+
+    const data = snapshot.val();
+    if (!data) return;
+
+    isApplyingRemote = true;
+    Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
+    loadFromStorage();
+    renderTable();
+    renderStats();
+	
+    if (document.querySelector(".tab.active")?.dataset.tab === "profile") {
+        renderProfileStats();
+        renderRecentBooks();
+        renderFavourites();
+    }
+
+    isApplyingRemote = false;
+});
+
+    } else {
+        document.getElementById("signInBtn").style.display = "inline-block";
+        document.getElementById("signOutBtn").style.display = "none";
+        document.getElementById("syncStatus").textContent = "Not signed in (local only)";
+        if (dbRef) dbRef.off();
+        dbRef = null;
+    }
+});
+
+function saveToFirebase() {
+    if (!currentUser || !dbRef || isApplyingRemote) return;
+    const data = {
+        [STORAGE_KEY]: localStorage.getItem(STORAGE_KEY) || "[]",
+        [PROFILE_KEY]: localStorage.getItem(PROFILE_KEY) || "{}",
+        [GOALS_KEY]: localStorage.getItem(GOALS_KEY) || "{}",
+        [SHELF_COLORS_KEY]: localStorage.getItem(SHELF_COLORS_KEY) || "{}",
+        [SHOW_NUM_KEY]: localStorage.getItem(SHOW_NUM_KEY) || "true",
+        [TAB_KEY]: localStorage.getItem(TAB_KEY) || "list"
+    };
+    dbRef.set(data).catch(err => console.error("Sync error:", err));
+}
+
+function loadFromFirebase() {
+    if (!currentUser || !dbRef) return;
+    dbRef.once("value").then(snapshot => {
+        const data = snapshot.val();
+        if (data) {
+            Object.keys(data).forEach(key => localStorage.setItem(key, data[key]));
+			loadFromStorage();
+			renderTable();
+			renderStats();
+        }
+    });
+}
+
+/* Storage */
+function saveToStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(books)); }
+function loadFromStorage() {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    books = JSON.parse(saved);
+    nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder ?? 0), 0) + 1;
+    populateShelfFilter();
+    renderTable();
+}
+	
+// Hook all save functions to also save to Firebase
+const originalSaveToStorage = saveToStorage;
+saveToStorage = function() {
+    originalSaveToStorage();
+    saveToFirebase();
+};
+
+function saveProfile() {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    saveToFirebase();
+}
+
+// Override other saves that directly touch localStorage
+// (goals, shelf colors, show numbers, tab — they already call saveToFirebase via hooks or add below)
+document.getElementById("saveGoal").addEventListener("click", () => {
+    // ... existing code ...
+    localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
+    saveToFirebase(); // add this line
+});
+// Add saveToFirebase() at end of shelf color input, showNumbers change, etc. if needed
+// But most are covered by saveToStorage or direct hooks above
+
+// On load, if signed in, we already load from Firebase
+// === FIREBASE SYNC END ===
+
+let books = [];
+let sortState = { column: null, direction: 1 };
+let nextImportOrder = 0;
 const STORAGE_KEY = "reading_list_data";
 const SHOW_NUM_KEY = "reading_list_show_numbers";
 const TAB_KEY = "reading_list_active_tab";
@@ -289,223 +395,336 @@ const GOALS_KEY = "reading_goals_per_year";
 const SHELF_COLORS_KEY = "reading_shelf_colors";
 const PROFILE_KEY = "reading_list_profile";
 
-// Global State - Loaded immediately from local storage so render is instant
-let books = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+const goalYearInput = document.getElementById("goalYear");
+const yearGoalInput = document.getElementById("yearGoal");
+const yearBooksInput = document.getElementById("yearBooksGoal");
+
 let shelfColors = JSON.parse(localStorage.getItem(SHELF_COLORS_KEY) || "{}");
 let goals = JSON.parse(localStorage.getItem(GOALS_KEY) || "{}");
 let profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}");
-if (!profile.favourites) profile.favourites = [];
+profile.favourites ??= [];
 
-let currentUser = null;
-let isApplyingRemote = false;
-let sortState = { column: "recent", direction: -1 };
+document.getElementById("showNumbers").checked = JSON.parse(localStorage.getItem(SHOW_NUM_KEY) || "true");
 
-// Init Firebase
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-const auth = firebase.auth();
-
-const firestore = firebase.firestore();
-
-// Enable offline persistence (better mobile sync)
-firebase.firestore().enablePersistence({ synchronizeTabs: true })
-  .catch((err) => {
-      console.warn("Firestore persistence not enabled:", err.code);
-  });
-
-/**
- * 2. AUTHENTICATION LOGIC
- */
-// A. Set persistence to LOCAL immediately
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-    .catch(err => console.error("Persistence error:", err));
-
-// B. Handle Redirect Result (Crucial for Mobile)
-auth.getRedirectResult()
-    .then((result) => {
-        if (result.user) {
-            console.log("Redirect login success:", result.user.displayName);
-            document.getElementById("syncStatus").textContent = "Redirect successful. Syncing...";
-        }
-        // Force button state just in case
-        document.getElementById("signInBtn").disabled = false;
-    })
-    .catch((error) => {
-        console.error("Redirect error:", error);
-        document.getElementById("signInBtn").disabled = false;
-        document.getElementById("syncStatus").textContent = "Login Error: " + error.message;
+/* Shared helper for per-year stats */
+function calculatePerYear() {
+    const perYear = {};
+    books.forEach(b => {
+        if (b.exclusiveShelf !== "read" || !b.dateRead) return;
+        const dates = b.dateRead.split(",").map(d => d.trim()).filter(Boolean);
+        dates.forEach(dateStr => {
+            const dt = new Date(dateStr);
+            if (isNaN(dt.getTime())) return;
+            const y = dt.getFullYear();
+            perYear[y] ??= { books: 0, pages: 0 };
+            perYear[y].books++;
+            perYear[y].pages += b.pages;
+        });
     });
-
-// C. Auth State Listener
-auth.onAuthStateChanged(user => {
-    currentUser = user;
-    const signInBtn = document.getElementById("signInBtn");
-    const signOutBtn = document.getElementById("signOutBtn");
-    const statusEl = document.getElementById("syncStatus");
-
-    if (user) {
-        signInBtn.style.display = "none";
-        signOutBtn.style.display = "inline-block";
-        statusEl.textContent = `Zalogowano: ${user.displayName || user.email}`;
-        loadFromFirestore();
-    } else {
-        signInBtn.style.display = "inline-block";
-        signOutBtn.style.display = "none";
-        statusEl.textContent = "Tryb lokalny (offline)";
-        loadAllFromStorage();
-    }
-    if(signInBtn) signInBtn.disabled = false;
-});
-// Fail-safe: show local data if Firebase doesn't respond quickly
-setTimeout(() => {
-    const status = document.getElementById("syncStatus");
-    if (status.textContent === "Loading local data..." || status.textContent === "Initializing...") {
-        loadAllFromStorage(); // ensures UI is populated
-        status.textContent = currentUser ? `Signed in: ${currentUser.displayName || currentUser.email}` : "Local Mode (offline)";
-        document.getElementById("signInBtn").style.display = "inline-block";
-        document.getElementById("signInBtn").disabled = false;
-    }
-}, 1000);
-
-
-// Auth Buttons
-document.getElementById("signInBtn").addEventListener("click", async () => {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    document.getElementById("signInBtn").disabled = true;
-    document.getElementById("syncStatus").textContent = "Signing in...";
-
-    try {
-        // Use popup on desktop, redirect only on mobile
-        if (window.innerWidth <= 800 && /Mobi|Android/i.test(navigator.userAgent)) {
-            await auth.signInWithRedirect(provider);
-        } else {
-            const result = await auth.signInWithPopup(provider);
-            currentUser = result.user;
-            document.getElementById("syncStatus").textContent = `Signed in: ${currentUser.displayName}`;
-            // Load Firestore immediately after popup login
-            loadFromFirestore();
-        }
-    } catch (err) {
-        console.error("Login error:", err);
-        document.getElementById("syncStatus").textContent = "Login failed: " + err.message;
-        document.getElementById("signInBtn").disabled = false;
-    }
-});
-
-
-document.getElementById("signOutBtn").addEventListener("click", () => {
-    auth.signOut().then(() => location.reload());
-});
-
-
-/**
- * 3. DATA PERSISTENCE HELPER
- */
-function loadAllFromStorage() {
-    books = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    shelfColors = JSON.parse(localStorage.getItem(SHELF_COLORS_KEY) || "{}");
-    goals = JSON.parse(localStorage.getItem(GOALS_KEY) || "{}");
-    profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}");
-    if (!profile.favourites) profile.favourites = [];
-    populateShelfFilter();
-    document.getElementById("syncStatus").textContent = currentUser ? `Signed in: ${currentUser.displayName || currentUser.email}` : "Local data loaded";
-
+    return perYear;
 }
 
-function saveAllToStorage() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
-    localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
-    localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-    saveToFirebase();
-}
-
-async function saveToFirebase() {
-    if (!currentUser) return;
-    const docRef = firestore.collection("users").doc(currentUser.uid);
-    try {
-        await docRef.set({
-            books,
-            profile,
-            goals,
-            shelfColors
-        }, { merge: true });
-    } catch (err) {
-        console.error("Firestore sync error:", err);
+/* Helper for latest read timestamp (handles multiple dates) */
+function getLatestReadTimestamp(book) {
+    if (book.exclusiveShelf !== "read" || !book.dateRead) return 0;
+    const dates = book.dateRead.split(",").map(d => d.trim());
+    let maxTs = 0;
+    for (let d of dates) {
+        const ts = new Date(d).getTime();
+        if (!isNaN(ts)) maxTs = Math.max(maxTs, ts);
     }
+    return maxTs;
 }
 
-async function loadFromFirebase() {
-    await loadFromFirestore();
+function createBookCard(b) {
+    const div = document.createElement("div");
+    div.style.cssText = "background:#222; padding:6px; border:1px solid #444; border-radius:4px; width:120px; cursor:pointer; text-align:center;";
+    div.title = `${b.title} — ${b.author}`;
+    div.innerHTML = `
+        <strong class="profile-book-title">${b.title}</strong>
+        <span class="profile-book-author">${b.author}</span>
+    `;
+    div.addEventListener("click", () => openEditModal(b));
+    return div;
 }
 
-async function loadFromFirestore() {
-    if (!currentUser) return;
+/* Tabs */
+document.querySelectorAll(".tab").forEach(tab =>
+    tab.addEventListener("click", () => switchTab(tab.dataset.tab))
+);
 
-    const docRef = firestore.collection("users").doc(currentUser.uid);
-    try {
-        const doc = await docRef.get();
-        if (doc.exists) {
-            const data = doc.data();
-
-            // Save everything to localStorage first
-            if (data.books) localStorage.setItem(STORAGE_KEY, JSON.stringify(data.books));
-            if (data.profile) localStorage.setItem(PROFILE_KEY, JSON.stringify(data.profile));
-            if (data.goals) localStorage.setItem(GOALS_KEY, JSON.stringify(data.goals));
-            if (data.shelfColors) localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(data.shelfColors));
-        }
-
-        // Load into memory and render UI
-        loadAllFromStorage();
-
-    } catch (err) {
-        console.error("Firestore load error:", err);
-        document.getElementById("syncStatus").textContent = "Error loading cloud data (offline mode)";
-        loadAllFromStorage(); // fallback to local
-    }
-}
-
-
-
-/**
- * 4. UI LOGIC - TABS
- */
 function switchTab(name) {
-    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
-    document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === "tab-" + name));
-    localStorage.setItem(TAB_KEY, name);
-    populateShelfFilter(); // Add this line here
-    renderCurrentTab();
-}
-
-function renderCurrentTab() {
-    // Always render List to keep it updated
-    renderTable(); 
-    
-    // Check active tab
-    const active = document.querySelector(".tab.active").dataset.tab;
-    if (active === "stats") renderStats();
-    if (active === "profile") {
+    document.querySelectorAll(".tab").forEach(t =>
+        t.classList.toggle("active", t.dataset.tab === name)
+    );
+    document.querySelectorAll(".tab-content").forEach(c =>
+        c.classList.toggle("active", c.id === "tab-" + name)
+    );
+    if (name === "options") renderShelfManager();
+    if (name === "stats") renderStats();
+    if (name === "profile") {
         renderProfileStats();
         renderRecentBooks();
         renderFavourites();
     }
-    if (active === "options") {
-        renderShelfManager();
-        loadGoalsForYear();
-    }
+    localStorage.setItem(TAB_KEY, name);
+	saveToFirebase();
 }
 
-document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => switchTab(tab.dataset.tab)));
+/* Controls */
+document.getElementById("fileInput").addEventListener("change", handleFile);
+document.getElementById("shelfFilter").addEventListener("change", renderTable);
+document.getElementById("showNumbers").addEventListener("change", () => {
+    localStorage.setItem(SHOW_NUM_KEY, document.getElementById("showNumbers").checked);
+    renderTable();
+    saveToFirebase();
+});
+document.getElementById("searchInput").addEventListener("input", renderTable); // moved outside renderTable
 
-/**
- * 5. UI LOGIC - LIST & TABLE
- */
+/* Options buttons */
+document.getElementById("saveGoal").addEventListener("click", () => {
+    const pagesVal = Number(yearGoalInput.value) || 0;
+    const booksVal = Number(yearBooksInput.value) || 0;
+    const selectedYear = Number(goalYearInput.value);
+    goals[selectedYear] = { pages: pagesVal, books: booksVal };
+    localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
+    alert(`Goals for ${selectedYear} saved: ${pagesVal} pages, ${booksVal} books`);
+    renderStats();
+    loadGoalsForYear();
+	saveToFirebase();
+});
+document.getElementById("removeGoal").addEventListener("click", () => {
+    const selectedYear = Number(goalYearInput.value);
+    if (goals[selectedYear]) {
+        if (!confirm(`Remove goals for ${selectedYear}?`)) return;
+        delete goals[selectedYear];
+        localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
+        alert(`Goals for ${selectedYear} removed.`);
+        loadGoalsForYear();
+        renderStats();
+    } else {
+        alert(`No goals set for ${selectedYear}.`);
+    }
+});
+document.getElementById("clearStorage").addEventListener("click", () => {
+    if (!confirm("Clear all locally saved reading list data?")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(PROFILE_KEY);
+    books = [];
+    profile = { favourites: [] };
+    document.getElementById("tableBody").innerHTML = "";
+    document.getElementById("stats").innerHTML = "";
+    populateShelfFilter();
+    renderProfileStats();
+    renderRecentBooks();
+    renderFavourites();
+	saveToFirebase();
+});
+document.getElementById("exportData").addEventListener("click", () => {
+    const data = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        books
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "reading-list.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+});
+/* throttle typing */
+let profileSaveTimeout = null;
+
+function scheduleProfileSave() {
+    clearTimeout(profileSaveTimeout);
+    profileSaveTimeout = setTimeout(() => {
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+        saveToFirebase();
+    }, 500);
+}
+	
+/* Sorting */
+document.querySelectorAll("th").forEach(th =>
+    th.addEventListener("click", () => handleSort(th.dataset.col))
+);
+function handleSort(column) {
+    if (!column) return;
+    sortState.direction = sortState.column === column ? -sortState.direction : 1;
+    sortState.column = column;
+    updateSortIndicators();
+    renderTable();
+}
+function updateSortIndicators() {
+    document.querySelectorAll(".sort").forEach(s => s.textContent = "");
+    if (!sortState.column) return;
+    const el = document.querySelector(`th[data-col="${sortState.column}"] .sort`);
+    if (el) el.textContent = sortState.direction === 1 ? "▲" : "▼";
+}
+
+/* File handling */
+function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        if (file.name.endsWith(".json")) {
+            importJSON(ev.target.result);
+        } else {
+            parseCSV(ev.target.result);
+        }
+    };
+    reader.readAsText(file);
+}
+function parseCSV(text) {
+    const lines = text.split("\n").filter(l => l.trim());
+    const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim());
+    const idx = n => headers.indexOf(n);
+    books = lines.slice(1).map((line, i) => {
+        const cols = parseLine(line);
+        if (!cols[idx("Title")]) return null;
+        const exclusive = cols[idx("Exclusive Shelf")] || "";
+        let shelves = cols[idx("Bookshelves")] ? cols[idx("Bookshelves")].split(",").map(s => s.trim()) : [];
+        shelves = shelves.filter(s => s !== exclusive);
+        return {
+            title: cols[idx("Title")],
+            rating: Number(cols[idx("My Rating")]) || 0,
+			series: cols[idx("Series")] || "",
+            author: cols[idx("Author")],
+            pages: Number(cols[idx("Number of Pages")]) || 0,
+            year: Number(cols[idx("Original Publication Year")]) || null,
+            dateRead: cols[idx("Date Read")] || "",
+            readCount: Number(cols[idx("Read Count")]) || 0,
+            notes: cols[idx("My Review")] || "",
+            exclusiveShelf: exclusive,
+            shelves,
+            importOrder: lines.length - 2 - i
+        };
+    }).filter(Boolean);
+    saveToStorage();
+	saveToFirebase();
+    populateShelfFilter();
+    nextImportOrder = books.length;
+    sortState.column = "importOrder";
+    sortState.direction = -1;
+    updateSortIndicators();
+    renderTable();
+}
+function importJSON(text) {
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch {
+        alert("Invalid JSON file.");
+        return;
+    }
+    if (!data.books || !Array.isArray(data.books)) {
+        alert("Not a valid reading list export.");
+        return;
+    }
+    if (!confirm("Importing will replace your current list. Continue?")) return;
+    books = data.books;
+    nextImportOrder = books.reduce((max, b) => Math.max(max, b.importOrder ?? 0), 0) + 1;
+    saveToStorage();
+	saveToFirebase();
+    populateShelfFilter();
+    renderTable();
+    renderStats();
+}
+function parseLine(line) {
+    const result = [];
+    let current = "", inQuotes = false;
+    for (let c of line) {
+        if (c === '"') inQuotes = !inQuotes;
+        else if (c === "," && !inQuotes) { result.push(current); current = ""; }
+        else current += c;
+    }
+    result.push(current);
+    return result;
+}
+document.getElementById("sortRecent").addEventListener("click", () => {
+    if (sortState.column === "importOrder") {
+        sortState.direction = -sortState.direction;
+    } else {
+        sortState.column = "importOrder";
+        sortState.direction = -1;
+    }
+    updateSortIndicators();
+    renderTable();
+});
+
+/* search logic */
+function filterBooksByQuery(list, query) {
+    if (!query.trim()) return list;
+    query = query.trim().toLowerCase();
+    const terms = query.match(/\S+/g) || [];
+    return list.filter(book => {
+        let keep = true;
+        for (let term of terms) {
+            let m;
+            if ((m = term.match(/^status(!?=)(.+)$/))) {
+                const [_, op, val] = m;
+                const target = val.trim().toLowerCase();
+                if (op === "=") keep = keep && (book.exclusiveShelf.toLowerCase() === target);
+                else keep = keep && (book.exclusiveShelf.toLowerCase() !== target);
+            }
+            else if ((m = term.match(/^pages([<>=]{1,2})(\d+)$/))) {
+                const [_, op, val] = m;
+                const num = Number(val);
+                if (op === "=") keep = keep && book.pages === num;
+                else if (op === "!=") keep = keep && book.pages !== num;
+                else if (op === "<") keep = keep && book.pages < num;
+                else if (op === ">") keep = keep && book.pages > num;
+                else if (op === "<=") keep = keep && book.pages <= num;
+                else if (op === ">=") keep = keep && book.pages >= num;
+            }
+            else if ((m = term.match(/^date([<>=!]{1,2})(\d{4})$/))) {
+                const [_, op, val] = m;
+                const year = Number(val);
+                const readYear = book.dateRead ? new Date(book.dateRead.split(",")[0].trim()).getFullYear() : null;
+                if (readYear === null) { keep = false; continue; }
+                if (op === "=") keep = keep && readYear === year;
+                else if (op === "!=") keep = keep && readYear !== year;
+                else if (op === "<") keep = keep && readYear < year;
+                else if (op === ">") keep = keep && readYear > year;
+                else if (op === "<=") keep = keep && readYear <= year;
+                else if (op === ">=") keep = keep && readYear >= year;
+            }
+            else if ((m = term.match(/^count([<>=!]{1,2})(\d+)$/))) {
+                const [_, op, val] = m;
+                const num = Number(val);
+                if (op === "=") keep = keep && book.readCount === num;
+                else if (op === "!=") keep = keep && book.readCount !== num;
+                else if (op === "<") keep = keep && book.readCount < num;
+                else if (op === ">") keep = keep && book.readCount > num;
+                else if (op === "<=") keep = keep && book.readCount <= num;
+                else if (op === ">=") keep = keep && book.readCount >= num;
+            }
+            else if ((m = term.match(/^year([<>=!]{1,2})(\d{4})$/))) {
+                const [_, op, val] = m;
+                const yr = Number(val);
+                const bookYear = book.year;
+                if (bookYear === null || bookYear === undefined) { keep = false; continue; }
+                if (op === "=") keep = keep && bookYear === yr;
+                else if (op === "!=") keep = keep && bookYear !== yr;
+                else if (op === "<") keep = keep && bookYear < yr;
+                else if (op === ">") keep = keep && bookYear > yr;
+                else if (op === "<=") keep = keep && bookYear <= yr;
+                else if (op === ">=") keep = keep && bookYear >= yr;
+            }
+            else {
+                const text = (book.title + " " + book.author + " " + (book.series || "")).toLowerCase();
+                keep = keep && text.includes(term);
+            }
+            if (!keep) break;
+        }
+        return keep;
+    });
+}
+
+/* Rendering */
 function populateShelfFilter() {
     const select = document.getElementById("shelfFilter");
-    if (!select) return;
-    const currentVal = select.value;
     select.innerHTML = "";
     const shelves = new Set(["all"]);
     books.forEach(b => {
@@ -518,485 +737,573 @@ function populateShelfFilter() {
         opt.textContent = s;
         select.appendChild(opt);
     });
-    if (currentVal && shelves.has(currentVal)) select.value = currentVal;
 }
+
+// Note popup (unchanged)
+const notePopup = document.createElement("div");
+notePopup.style.cssText = `
+    display:none;
+    position:absolute;
+    background:#222;
+    color:#eee;
+    border:1px solid #444;
+    padding:6px;
+    white-space:pre-wrap;
+    font-size:0.85em;
+    max-width:400px;
+    min-width:150px;
+    z-index:1001;
+    box-shadow:0 2px 8px rgba(0,0,0,0.5);
+    word-wrap:break-word;
+`;
+document.body.appendChild(notePopup);
+
+const filterPopup = document.createElement("div");
+filterPopup.style.cssText = `
+    display:none;
+    position:absolute;
+    background:#222;
+    color:#eee;
+    border:1px solid #444;
+    padding:8px;
+    white-space:pre-wrap;
+    font-size:0.85em;
+    max-width:300px;
+    z-index:1002;
+    box-shadow:0 2px 8px rgba(0,0,0,0.5);
+`;
+filterPopup.textContent = `Available filters:\n
+status=read / currently-reading / to-read (!= works too)
+pages=100, pages>200, pages<=150, etc.
+date=2023, date>=2020, date!=2018, etc.
+count=1, count>1, count!=2, etc.
+year=1999, year>=2005, year!=2010, etc.`;
+document.body.appendChild(filterPopup);
+
+const infoIcon = document.getElementById("filterInfo");
+infoIcon.addEventListener("mouseenter", e => {
+    filterPopup.style.display = "block";
+    const move = ev => {
+        const scrollTop = window.scrollY || document.documentElement.scrollTop;
+        const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
+        filterPopup.style.left = (ev.clientX + scrollLeft + 12) + "px";
+        filterPopup.style.top = (ev.clientY + scrollTop + 12) + "px";
+    };
+    document.addEventListener("mousemove", move);
+    infoIcon.addEventListener("mouseleave", () => {
+        filterPopup.style.display = "none";
+        document.removeEventListener("mousemove", move);
+    }, { once: true });
+});
 
 function renderTable() {
     const showNumbers = document.getElementById("showNumbers").checked;
     const filter = document.getElementById("shelfFilter").value;
     const body = document.getElementById("tableBody");
     body.innerHTML = "";
-
-    let list = books.filter(b => filter === "all" || b.exclusiveShelf === filter || b.shelves.includes(filter));
-    
-   // Sort
-if (sortState.column) {
-    list.sort((a, b) => {
-        let cmp = 0;
-
-        if (sortState.column === "recent") {
-            const aVal = a.id || a.importOrder || 0;
-            const bVal = b.id || b.importOrder || 0;
-            cmp = aVal - bVal;
-        } 
-        else if (sortState.column === "dateRead") {
-            const aVal = a.dateRead ? new Date(a.dateRead.split(',')[0]).getTime() : 0;
-            const bVal = b.dateRead ? new Date(b.dateRead.split(',')[0]).getTime() : 0;
-            cmp = aVal - bVal;
-        } 
-        else {
-            const valA = a[sortState.column];
-            const valB = b[sortState.column];
-
-            if (typeof valA === "number" && typeof valB === "number") {
-                cmp = valA - valB;
-            } else {
-                cmp = String(valA || "").localeCompare(String(valB || ""));
-            }
-        }
-
-        return cmp * sortState.direction;
-    });
-}
-
-
-    // Search
-    const query = document.getElementById("searchInput").value.toLowerCase().trim();
-    if (query) {
-        list = list.filter(b => 
-            (b.title && b.title.toLowerCase().includes(query)) || 
-            (b.author && b.author.toLowerCase().includes(query)) ||
-            (b.series && b.series.toLowerCase().includes(query))
-        );
+    let list = books.filter(b =>
+        filter === "all" || b.exclusiveShelf === filter || b.shelves.includes(filter)
+    );
+    if (sortState.column) {
+        list.sort((a, b) => {
+            let cmp = compare(a, b, sortState.column);
+            return cmp * sortState.direction;
+        });
     }
-
+    const query = document.getElementById("searchInput")?.value || "";
+    list = filterBooksByQuery(list, query);
     list.forEach((b, index) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>
-                ${showNumbers ? `<span style="color:#666; font-size:0.8em; margin-right:4px;">${index + 1}.</span>` : ""}
-                <span style="font-weight:500;">${b.title}</span>
-                ${b.series ? `<div style="font-size:0.8em; color:#888;">${b.series}</div>` : ""}
-                ${b.notes ? `<span class="note-icon" title="${b.notes.replace(/"/g, '&quot;')}" style="cursor:help; margin-left:4px;">📝</span>` : ''}
+                ${showNumbers ? (index + 1) + ". " : ""}${b.title}
+                ${b.notes ? `<span class="noteIcon" style="cursor:help; color:#888; margin-left:4px;">📝</span>` : ''}
             </td>
-            <td>${b.rating || "-"}</td>
+            <td>${b.rating ? b.rating : "-"}</td>
             <td>${b.author}</td>
             <td>
-                <span class="tag" style="background:${shelfColors[b.exclusiveShelf] || '#444'}">${b.exclusiveShelf}</span>
-                ${b.shelves.map(s => `<span class="tag" style="background:${shelfColors[s] || '#444'}">${s}</span>`).join("")}
+                ${[b.exclusiveShelf, ...b.shelves].filter(Boolean).map(sh => {
+                    const color = shelfColors[sh] || "#888";
+                    return `<span style="background:${color};padding:2px 4px;margin-right:2px;border-radius:3px;">${sh}</span>`;
+                }).join("")}
             </td>
             <td>${b.pages || "-"}</td>
             <td>${b.year || "-"}</td>
             <td>${b.dateRead || "-"}</td>
-            <td>${b.readCount || 1}</td>
-            <td><button class="editBtn" style="padding:2px 8px; font-size:0.8em;">Edit</button></td>
+            <td>${b.readCount || "-"}</td>
+            <td style="width:40px;">
+                <button class="editBtn" style="opacity:0.4; padding:2px 4px;">✎</button>
+            </td>
         `;
-        tr.querySelector(".editBtn").addEventListener("click", () => openEditModal(b));
         body.appendChild(tr);
+        if (b.notes) {
+            const noteIcon = tr.querySelector(".noteIcon");
+            noteIcon.addEventListener("mouseenter", e => {
+                notePopup.textContent = b.notes;
+                notePopup.style.display = "block";
+                const move = ev => {
+                    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+                    const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
+                    notePopup.style.left = (ev.clientX + scrollLeft + 12) + "px";
+                    notePopup.style.top = (ev.clientY + scrollTop + 12) + "px";
+                };
+                document.addEventListener("mousemove", move);
+                noteIcon.addEventListener("mouseleave", () => {
+                    notePopup.style.display = "none";
+                    document.removeEventListener("mousemove", move);
+                }, { once: true });
+            });
+        }
+        tr.querySelector(".editBtn").addEventListener("click", () => openEditModal(b));
+    });
+}
+function compare(a, b, col) {
+    if (col === "importOrder") return a.importOrder - b.importOrder;
+    let x = col === "shelves" ? [a.exclusiveShelf, ...a.shelves].join(", ") : a[col];
+    let y = col === "shelves" ? [b.exclusiveShelf, ...b.shelves].join(", ") : b[col];
+    if (col === "dateRead") return new Date(x || 0) - new Date(y || 0);
+    if (typeof x === "number") return x - y;
+    return String(x || "").localeCompare(String(y || ""));
+}
+
+/* Stats */
+function renderStats() {
+    const stats = document.getElementById("stats");
+    if (!books.length) { stats.innerHTML = ""; return; }
+    const perYear = calculatePerYear();
+    const readBooks = books.filter(b => b.exclusiveShelf === "read");
+    const totalPages = books.reduce((s, b) => s + b.pages, 0);
+    const pagesRead = readBooks.reduce((s, b) => s + b.pages * Math.max(1, b.readCount), 0);
+    const rereads = books.filter(b => b.readCount > 1);
+    const selectedYear = Number(goalYearInput.value);
+    const pagesGoal = goals[selectedYear]?.pages || 0;
+    const booksGoal = goals[selectedYear]?.books || 0;
+    const currentPages = perYear[selectedYear]?.pages || 0;
+    const currentBooks = perYear[selectedYear]?.books || 0;
+    const years = Object.keys(perYear).sort();
+    const mostReread = rereads.sort((a, b) => b.readCount - a.readCount)[0];
+    stats.innerHTML = `
+        <h2>Stats (${selectedYear})</h2>
+        <div class="stats-grid">
+            <div>Total books</div><div>${books.length}</div>
+            <div>Books read</div><div>${readBooks.length}</div>
+            <div>Total pages</div><div>${totalPages}</div>
+            <div>Pages read</div><div>${pagesRead}</div>
+            <div>Reread books</div><div>${rereads.length}</div>
+            <div>Avg pages/book</div><div>${Math.round(totalPages / books.length || 0)}</div>
+        </div>
+        ${mostReread ? `<div class="stats-year">Most reread: ${mostReread.title} (${mostReread.readCount}x)</div>` : ""}
+        ${years.length ? `<div class="stats-year">${years.map(y => `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages`).join("<br>")}</div>` : ""}
+        ${pagesGoal ? `<div class="stats-year">${selectedYear} pages goal: ${currentPages} / ${pagesGoal}</div>` : ""}
+        ${booksGoal ? `<div class="stats-year">${selectedYear} books goal: ${currentBooks} / ${booksGoal}</div>` : ""}
+    `;
+    // Chart code unchanged...
+    const chartCtx = document.getElementById('statsChart').getContext('2d');
+    const chartLabels = Object.keys(perYear).sort();
+    const chartBooks = chartLabels.map(y => perYear[y].books);
+    const chartPages = chartLabels.map(y => perYear[y].pages);
+    if (window.statsChartInstance) window.statsChartInstance.destroy();
+    window.statsChartInstance = new Chart(chartCtx, {
+        type: 'bar',
+        data: {
+            labels: chartLabels,
+            datasets: [
+                { label: 'Books Read', data: chartBooks, backgroundColor: 'rgba(75, 192, 192, 0.6)', yAxisID: 'booksAxis' },
+                { label: 'Pages Read', data: chartPages, backgroundColor: 'rgba(153, 102, 255, 0.6)', yAxisID: 'pagesAxis' }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'top', labels: { color: '#eee' } }, tooltip: { mode: 'index', intersect: false } },
+            scales: {
+                x: { ticks: { color: '#eee' }, grid: { color: '#333' } },
+                booksAxis: { type: 'linear', position: 'left', ticks: { color: '#eee', beginAtZero: true }, grid: { color: '#333' } },
+                pagesAxis: { type: 'linear', position: 'right', ticks: { color: '#eee', beginAtZero: true }, grid: { drawOnChartArea: false } }
+            }
+        }
     });
 }
 
-document.querySelectorAll("th[data-col]").forEach(th => {
-    th.addEventListener("click", () => {
-        const col = th.dataset.col;
-        sortState.direction = sortState.column === col ? -sortState.direction : 1;
-        sortState.column = col;
-        document.querySelectorAll(".sort").forEach(s => s.textContent = "");
-        document.getElementById("sortRecentBtn").textContent = "Recent";
-        th.querySelector(".sort").textContent = sortState.direction === 1 ? "▲" : "▼";
-        renderTable();
+function renderShelfManager() {
+    // unchanged
+    const container = document.getElementById("shelfManager");
+    container.innerHTML = "";
+    const shelvesSet = new Set();
+    books.forEach(b => b.shelves.forEach(s => shelvesSet.add(s)));
+    const shelves = Array.from(shelvesSet);
+    shelves.forEach(sh => {
+        const row = document.createElement("div");
+        row.style.marginBottom = "6px";
+        row.innerHTML = `
+            <input type="text" value="${sh}" class="renameShelf" style="width:140px;">
+            <input type="color" value="${shelfColors[sh] || '#888888'}" class="colorShelf">
+            <button class="renameBtn">Rename</button>
+            <button class="deleteBtn">Delete</button>
+        `;
+        container.appendChild(row);
+        const renameInput = row.querySelector(".renameShelf");
+        const colorInput = row.querySelector(".colorShelf");
+        row.querySelector(".renameBtn").addEventListener("click", () => {
+            const newName = renameInput.value.trim();
+            if (!newName || newName === sh) return;
+            if (!confirm(`Rename shelf "${sh}" to "${newName}"?`)) return;
+            books.forEach(b => {
+                b.shelves = b.shelves.map(s => s === sh ? newName : s);
+            });
+            if (shelfColors[sh]) {
+                shelfColors[newName] = shelfColors[sh];
+                delete shelfColors[sh];
+            }
+            saveToStorage();
+            localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
+            renderTable();
+            renderShelfManager();
+            populateShelfFilter();
+        });
+        row.querySelector(".deleteBtn").addEventListener("click", () => {
+            if (!confirm(`Delete shelf "${sh}" from all books?`)) return;
+            books.forEach(b => { b.shelves = b.shelves.filter(s => s !== sh); });
+            delete shelfColors[sh];
+            saveToStorage();
+            localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
+            renderTable();
+            renderShelfManager();
+            populateShelfFilter();
+        });
+        colorInput.addEventListener("input", () => {
+    shelfColors[sh] = colorInput.value;
+    localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
+    renderTable();
+    saveToFirebase();
+});
     });
+}
+
+function loadGoalsForYear() {
+    const year = Number(goalYearInput.value);
+    const saved = goals[year] || {};
+    yearGoalInput.value = saved.pages || "";
+    yearBooksInput.value = saved.books || "";
+}
+loadGoalsForYear();
+goalYearInput.addEventListener("change", () => {
+    loadGoalsForYear();
+    renderStats();
 });
+loadFromStorage();
+const savedTab = localStorage.getItem(TAB_KEY);
+if (savedTab) switchTab(savedTab);
+if (document.querySelector(".tab.active").dataset.tab === "stats") renderStats();
 
-document.getElementById("shelfFilter").addEventListener("change", renderTable);
-document.getElementById("searchInput").addEventListener("input", renderTable);
-document.getElementById("showNumbers").addEventListener("change", (e) => {
-    localStorage.setItem(SHOW_NUM_KEY, e.target.checked);
-    renderTable();
-});
-    document.getElementById("sortRecentBtn").addEventListener("click", () => {
-    if (sortState.column !== "recent") {
-        sortState.column = "recent";
-        sortState.direction = -1;
-    } else {
-        sortState.direction *= -1;
-    }
-
-    document.getElementById("sortRecentBtn").textContent =
-        sortState.direction === -1 ? "Recent ↓" : "Recent ↑";
-
-    renderTable();
-});
-
-document.getElementById("showNumbers").checked = JSON.parse(localStorage.getItem(SHOW_NUM_KEY) || "true");
-
-
-/**
- * 6. UI LOGIC - MODAL & EDITING
- */
+/* Edit Modal Logic */
 const editModal = document.getElementById("editModal");
 let editingBook = null;
+let originalData = null;
 
 function openEditModal(book) {
     editingBook = book;
-    const fields = ['Title', 'Author', 'Series', 'Pages', 'Year', 'DateRead', 'ReadCount', 'Rating', 'Notes', 'ExclusiveShelf'];
-    fields.forEach(f => {
-        const el = document.getElementById('edit' + f);
-        if(el) el.value = book ? (book[f.toLowerCase().replace('dateread','dateRead').replace('readcount','readCount').replace('exclusiveshelf','exclusiveShelf')] || "") : (f==='ReadCount'?'1':'');
-    });
-    
-    document.getElementById("editShelves").value = book ? book.shelves.join(", ") : "";
-    document.getElementById("editExclusiveShelf").value = book ? book.exclusiveShelf : "to-read";
-    
-    // Favourites logic
-    const isFav = book ? profile.favourites.includes(book.id || book.importOrder) : false;
-    document.getElementById("editFavourite").checked = isFav;
-    
-    // Show Series in Fav logic
-    document.getElementById("editShowSeriesFav").checked = book ? !!book.showSeriesInFav : false;
-
+    originalData = book ? { ...book } : null;
+    document.getElementById("editTitle").value = book?.title || "";
+    document.getElementById("editAuthor").value = book?.author || "";
+    document.getElementById("editSeries").value = book?.series || "";
+    document.getElementById("editShelves").value = book?.shelves.join(", ") || "";
+    document.getElementById("editExclusiveShelf").value = book?.exclusiveShelf || "to-read";
+    document.getElementById("editPages").value = book?.pages || "";
+    document.getElementById("editYear").value = book?.year || "";
+    document.getElementById("editDateRead").value = book?.dateRead || "";
+    document.getElementById("editReadCount").value = book?.readCount || 1;
+    document.getElementById("editRating").value = book?.rating || 0;
+    document.getElementById("editNotes").value = book?.notes || "";
+    document.getElementById("editFavourite").checked = book ? profile.favourites.includes(book.importOrder) : false;
     document.getElementById("removeBook").style.display = book ? "inline-block" : "none";
     editModal.style.display = "flex";
 }
 
-document.getElementById("closeEdit").addEventListener("click", () => editModal.style.display = "none");
-document.getElementById("addBook").addEventListener("click", () => openEditModal(null));
+function closeEditModal() {
+    editModal.style.display = "none";
+    editingBook = null;
+    originalData = null;
+}
+document.getElementById("closeEdit").addEventListener("click", closeEditModal);
+
+document.getElementById("removeBook").addEventListener("click", () => {
+    if (!editingBook || !confirm("Are you sure you want to remove this book?\nThis action cannot be undone.")) return;
+    // remove from favourites if present
+    profile.favourites = profile.favourites.filter(id => id !== editingBook.importOrder);
+    saveProfile();
+    books = books.filter(b => b !== editingBook);
+    saveToStorage();
+    renderTable();
+    renderStats();
+    if (document.querySelector(".tab.active").dataset.tab === "profile") {
+        renderProfileStats();
+        renderRecentBooks();
+        renderFavourites();
+    }
+    closeEditModal();
+});
 
 document.getElementById("saveEdit").addEventListener("click", () => {
-    const newShelves = document.getElementById("editShelves").value.split(",").map(s => s.trim()).filter(Boolean);
-    const newData = {
+    const newBookData = {
         title: document.getElementById("editTitle").value.trim(),
         author: document.getElementById("editAuthor").value.trim(),
         series: document.getElementById("editSeries").value.trim(),
+        shelves: document.getElementById("editShelves").value.split(",").map(s => s.trim()).filter(Boolean),
+        exclusiveShelf: document.getElementById("editExclusiveShelf").value,
         pages: Number(document.getElementById("editPages").value) || 0,
         year: Number(document.getElementById("editYear").value) || null,
         dateRead: document.getElementById("editDateRead").value.trim(),
         readCount: Number(document.getElementById("editReadCount").value) || 1,
         rating: Number(document.getElementById("editRating").value) || 0,
         notes: document.getElementById("editNotes").value.trim(),
-        exclusiveShelf: document.getElementById("editExclusiveShelf").value,
-        shelves: newShelves,
-        showSeriesInFav: document.getElementById("editShowSeriesFav").checked
     };
 
+    let bookId;
     if (editingBook) {
-        // Update existing
-        Object.assign(editingBook, newData);
-        const bookId = editingBook.id || editingBook.importOrder;
-        handleFavourite(bookId);
+        const exclusiveChanged = newBookData.exclusiveShelf !== editingBook.exclusiveShelf;
+        Object.assign(editingBook, newBookData);
+        if (exclusiveChanged) {
+            editingBook.importOrder = Math.max(...books.map(b => b.importOrder ?? 0), 0) + 1;
+        }
+        bookId = editingBook.importOrder;
     } else {
-        // Create new
-        newData.importOrder = Date.now(); // Simple unique ID
-        newData.id = newData.importOrder; 
-        books.push(newData);
-        handleFavourite(newData.id);
+        newBookData.importOrder = Math.max(...books.map(b => b.importOrder ?? 0), 0) + 1;
+        books.push(newBookData);
+        bookId = newBookData.importOrder;
     }
-    
-    saveAllToStorage();
-    editModal.style.display = "none";
-    renderCurrentTab();
+
+    // Handle favourite checkbox
+    const isFav = document.getElementById("editFavourite").checked;
+    if (isFav) {
+        if (!profile.favourites.includes(bookId)) profile.favourites.push(bookId);
+    } else {
+        profile.favourites = profile.favourites.filter(id => id !== bookId);
+    }
+    saveProfile();
+
+    saveToStorage();
+    renderTable();
+    renderStats();
+    if (document.querySelector(".tab.active").dataset.tab === "profile") {
+        renderProfileStats();
+        renderRecentBooks();
+        renderFavourites();
+    }
+    closeEditModal();
 });
 
-function handleFavourite(id) {
-    const checked = document.getElementById("editFavourite").checked;
-    if (checked) {
-        if (!profile.favourites.includes(id)) profile.favourites.push(id);
-    } else {
-        profile.favourites = profile.favourites.filter(fid => fid !== id);
-    }
+document.getElementById("addBook").addEventListener("click", () => openEditModal(null));
+
+/* Profile */
+function saveProfile() {
+    // Update from inputs if needed (for live typing)
+    profile.nick = document.getElementById("profileNick").value.trim();
+    profile.bio = document.getElementById("profileBio").value.trim();
+    // Save full profile (including picture and favourites)
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    saveToFirebase();
 }
 
-document.getElementById("removeBook").addEventListener("click", () => {
-    if (!confirm("Delete this book permanently?")) return;
-    if (editingBook) {
-        const id = editingBook.id || editingBook.importOrder;
-        books = books.filter(b => b !== editingBook);
-        profile.favourites = profile.favourites.filter(fid => fid !== id);
-        saveAllToStorage();
-        editModal.style.display = "none";
-        renderCurrentTab();
-    }
+// Live update for nick and bio as you type
+document.getElementById("profileNick").addEventListener("input", saveProfile);
+document.getElementById("profileBio").addEventListener("input", saveProfile);
+
+document.getElementById("profilePic").addEventListener("click", () => {
+    document.getElementById("profilePicInput").click();
 });
-
-
-/**
- * 7. UI LOGIC - PROFILE
- */
-function renderProfileStats() {
-    const read = books.filter(b => b.exclusiveShelf === "read");
-    document.getElementById("profileTotalBooks").textContent = read.length;
-    document.getElementById("profileTotalPages").textContent = read.reduce((sum, b) => sum + (b.pages || 0), 0).toLocaleString();
-    
-    // Pic & Info
-    if (profile.picture) document.getElementById("profilePic").src = profile.picture;
-    document.getElementById("profileNick").value = profile.nick || "";
-    document.getElementById("profileBio").value = profile.bio || "";
-}
-
-// Autosave Profile inputs
-document.getElementById("profileNick").addEventListener("input", e => { profile.nick = e.target.value; saveAllToStorage(); });
-document.getElementById("profileBio").addEventListener("input", e => { profile.bio = e.target.value; saveAllToStorage(); });
-
-// Profile Pic
-document.getElementById("profilePic").addEventListener("click", () => document.getElementById("profilePicInput").click());
-document.getElementById("profilePicInput").addEventListener("change", (e) => {
+document.getElementById("profilePicInput").addEventListener("change", e => {
     const file = e.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = ev => {
-            profile.picture = ev.target.result;
-            document.getElementById("profilePic").src = profile.picture;
-            saveAllToStorage();
-        };
-        reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        profile.picture = ev.target.result;
+        document.getElementById("profilePic").src = profile.picture;
+        saveProfile();  // Now saves the picture
+    };
+    reader.readAsDataURL(file);
 });
+
+// Initial load (apply saved profile)
+if (profile.picture) document.getElementById("profilePic").src = profile.picture;
+document.getElementById("profileNick").value = profile.nick || "";
+document.getElementById("profileBio").value = profile.bio || "";
+
+function renderProfileStats() {
+    const statsDiv = document.getElementById("profileStats");
+    if (!books.length) {
+        statsDiv.innerHTML = "No books yet.";
+        return;
+    }
+    const perYear = calculatePerYear();
+    const totalBooks = books.length;
+    const readBooks = books.filter(b => b.exclusiveShelf === "read").length;
+    const totalPages = books.reduce((s, b) => s + b.pages, 0);
+    const pagesRead = books.filter(b => b.exclusiveShelf === "read").reduce((s, b) => s + b.pages * Math.max(1, b.readCount), 0);
+    const avgBookLength = totalBooks ? Math.round(totalPages / totalBooks) : 0;
+    const rereads = books.filter(b => b.readCount > 1).length;
+    const avgRating = books.length ? Math.round(books.reduce((s, b) => s + (b.rating || 0), 0) / books.length * 10) / 10 : 0;
+    const year = Number(goalYearInput.value);
+    statsDiv.innerHTML = `
+        <div class="stats-grid" style="grid-template-columns: repeat(3, auto); gap:12px;">
+            <div>Total books</div><div>${totalBooks}</div>
+            <div> </div>
+            <div>Books read</div><div>${readBooks}</div>
+            <div> </div>
+            <div>Pages read</div><div>${pagesRead}</div>
+            <div> </div>
+            <div>Avg pages/book</div><div>${avgBookLength}</div>
+            <div> </div>
+            <div>Rereads</div><div>${rereads}</div>
+            <div> </div>
+            <div>Avg rating</div><div>${avgRating}</div>
+        </div>
+        ${goals[year] ? `<div class="stats-year">Year ${year} goal: ${perYear[year]?.books || 0}/${goals[year].books || 0} books, ${perYear[year]?.pages || 0}/${goals[year].pages || 0} pages</div>` : ""}
+    `;
+}
 
 function renderRecentBooks() {
     const container = document.getElementById("recentBooksContainer");
     container.innerHTML = "";
 
-    // 1. Currently Reading
-    const current = books.filter(b => b.exclusiveShelf === 'currently-reading');
-    
-    // 2. Recently Finished (Read, sorted by dateRead DESC, max 12)
-    const recentlyFinished = books.filter(b => b.exclusiveShelf === 'read')
-        .sort((a, b) => {
-            const dA = a.dateRead ? new Date(a.dateRead.split(',')[0]).getTime() : 0;
-            const dB = b.dateRead ? new Date(b.dateRead.split(',')[0]).getTime() : 0;
-            return dB - dA;
-        })
-        .slice(0, 12);
-        
-    // 3. Up Next (To-read, sorted by importOrder/id DESC, max 6)
-    const upNext = books.filter(b => b.exclusiveShelf === 'to-read')
-        .sort((a, b) => (b.id || b.importOrder) - (a.id || a.importOrder))
-        .slice(0, 6);
+    let hasAny = false;
 
-    // Helpers
-    const createSection = (title, bookList) => {
-        const titleEl = document.createElement('h3');
-        titleEl.className = "profile-section-title";
-        titleEl.textContent = title;
-        container.appendChild(titleEl);
-        
-        const grid = document.createElement('div');
-        grid.className = "book-grid";
-        if (bookList.length === 0) {
-            grid.innerHTML = `<div style="color:#666; font-size:0.9em; grid-column:1/-1;">None found.</div>`;
-        } else {
-            bookList.forEach(b => grid.appendChild(createBookCard(b)));
-        }
-        container.appendChild(grid);
-    };
+    // Currently Reading – show ALL
+    const currentlyReading = books
+        .filter(b => b.exclusiveShelf === "currently-reading")
+        .sort((a, b) => (b.importOrder ?? 0) - (a.importOrder ?? 0));
 
-    createSection("Currently Reading", current);
-    createSection("Recently Finished", recentlyFinished);
-    createSection("Up Next (To Read)", upNext);
+    if (currentlyReading.length > 0) {
+        hasAny = true;
+        const h4 = document.createElement("h4");
+        h4.textContent = "Currently Reading";
+        container.appendChild(h4);
+        const section = document.createElement("div");
+        section.style.cssText = "display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;";
+        currentlyReading.forEach(b => section.appendChild(createBookCard(b)));
+        container.appendChild(section);
+    }
+
+    // Last Read – up to 10 most recent
+    const lastRead = books
+        .filter(b => b.exclusiveShelf === "read")
+        .sort((a, b) => getLatestReadTimestamp(b) - getLatestReadTimestamp(a))
+        .slice(0, 10);
+
+    if (lastRead.length > 0) {
+        hasAny = true;
+        const h4 = document.createElement("h4");
+        h4.textContent = "Last Read";
+        container.appendChild(h4);
+        const section = document.createElement("div");
+        section.style.cssText = "display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;";
+        lastRead.forEach(b => section.appendChild(createBookCard(b)));
+        container.appendChild(section);
+    }
+
+    // To Read – up to 10 most recently added
+    const toRead = books
+        .filter(b => b.exclusiveShelf === "to-read")
+        .sort((a, b) => (b.importOrder ?? 0) - (a.importOrder ?? 0))
+        .slice(0, 10);
+
+    if (toRead.length > 0) {
+        hasAny = true;
+        const h4 = document.createElement("h4");
+        h4.textContent = "To Read (recently added)";
+        container.appendChild(h4);
+        const section = document.createElement("div");
+        section.style.cssText = "display:flex; flex-wrap:wrap; gap:8px;";
+        toRead.forEach(b => section.appendChild(createBookCard(b)));
+        container.appendChild(section);
+    }
+
+    if (!hasAny) {
+        container.innerHTML = "<p>No books yet.</p>";
+    }
 }
 
 function renderFavourites() {
     const container = document.getElementById("favouritesContainer");
     container.innerHTML = "";
-    const favs = books.filter(b => profile.favourites.includes(b.id || b.importOrder));
-    if (favs.length === 0) {
-        container.innerHTML = '<div style="color:#666; grid-column:1/-1;">No favourites selected.</div>';
+
+    const favouriteBooks = books.filter(b => profile.favourites.includes(b.importOrder));
+
+    if (favouriteBooks.length === 0) {
+        container.innerHTML = "<p>No favourites yet.</p>";
         return;
     }
-    favs.forEach(b => container.appendChild(createBookCard(b, true)));
-}
 
-function createBookCard(b, isFavSection = false) {
-    const div = document.createElement("div");
-    div.className = "book-card";
-    // Check if we show Series Name or Title
-    let displayTitle = b.title;
-    if (isFavSection && b.showSeriesInFav && b.series) {
-        displayTitle = b.series;
-    }
-    
-    div.innerHTML = `<div class="book-title">${displayTitle}</div><div class="book-author">${b.author}</div>`;
-    div.addEventListener("click", () => openEditModal(b));
-    return div;
-}
+    // Group favourite books by series
+    const seriesMap = {};
+    const noSeriesBooks = [];
 
-/**
- * 8. UI LOGIC - STATS
- */
-function renderStats() {
-    const selectedYear = Number(document.getElementById("goalYear").value);
-    const read = books.filter(b => b.exclusiveShelf === "read");
-    
-    // Per Year Calc
-    const perYear = {};
-    read.forEach(b => {
-        if (!b.dateRead) return;
-        const dates = b.dateRead.split(",");
-        dates.forEach(d => {
-            const y = new Date(d.trim()).getFullYear();
-            if (!isNaN(y)) {
-                if (!perYear[y]) perYear[y] = { books: 0, pages: 0 };
-                perYear[y].books++;
-                perYear[y].pages += (b.pages || 0);
-            }
-        });
-    });
-
-    const years = Object.keys(perYear).sort();
-    
-    // Text Stats
-    const totalPages = read.reduce((s, b) => s + (b.pages || 0), 0);
-    const textStats = document.getElementById("textStats");
-    textStats.innerHTML = `
-        <div class="stats-grid">
-            <div>All Time Books Read: ${read.length}</div>
-            <div>All Time Pages Read: ${totalPages.toLocaleString()}</div>
-        </div>
-        <hr style="border-color:#333; margin:15px 0;">
-        <strong>Goal Progress (${selectedYear})</strong><br>
-        Books: ${perYear[selectedYear]?.books || 0} / ${goals[selectedYear]?.books || "-"} <br>
-        Pages: ${perYear[selectedYear]?.pages || 0} / ${goals[selectedYear]?.pages || "-"}
-    `;
-
-    // Chart
-    if (window.statsChartInstance) window.statsChartInstance.destroy();
-    const ctx = document.getElementById('statsChart').getContext('2d');
-    window.statsChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: years,
-            datasets: [
-                { label: 'Books', data: years.map(y => perYear[y].books), backgroundColor: '#4299e1', yAxisID: 'y' },
-                { label: 'Pages', data: years.map(y => perYear[y].pages), backgroundColor: '#9f7aea', yAxisID: 'y1' }
-            ]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                x: { ticks: { color: '#ccc' } },
-                y: { type: 'linear', position: 'left', ticks: { color: '#ccc' } },
-                y1: { type: 'linear', position: 'right', ticks: { color: '#ccc' }, grid: { drawOnChartArea: false } }
-            },
-            plugins: { legend: { labels: { color: '#ccc' } } }
+    favouriteBooks.forEach(b => {
+        const key = b.series?.trim() || "";
+        if (key) {
+            if (!seriesMap[key]) seriesMap[key] = [];
+            seriesMap[key].push(b);
+        } else {
+            noSeriesBooks.push(b);
         }
     });
-}
 
-/**
- * 9. UI LOGIC - OPTIONS & SHELVES
- */
-function renderShelfManager() {
-    const div = document.getElementById("shelfManager");
-    div.innerHTML = "";
-    
-    // Collect all shelves
-    const allShelves = new Set();
-    books.forEach(b => b.shelves.forEach(s => allShelves.add(s)));
-    
-    allShelves.forEach(s => {
-        const row = document.createElement("div");
-        row.style.marginBottom = "8px";
-        row.innerHTML = `
-            <div style="display:flex; gap:8px;">
-                <input type="text" value="${s}" readonly style="width:120px; background:#333; border:none; color:#bbb;">
-                <input type="color" value="${shelfColors[s] || '#666666'}" class="color-picker">
-                <button class="delete-shelf danger" style="padding:2px 6px;">X</button>
-            </div>
+    // Render grouped series favourites (sorted alphabetically by series name)
+    Object.keys(seriesMap).sort().forEach(series => {
+        const group = seriesMap[series];
+        const totalInSeries = books.filter(b => (b.series?.trim() || "") === series).length;
+
+        // Pick representative book: highest rating, tie-break by latest read
+        group.sort((a, b) => {
+            const ratDiff = (b.rating || 0) - (a.rating || 0);
+            if (ratDiff !== 0) return ratDiff;
+            return getLatestReadTimestamp(b) - getLatestReadTimestamp(a);
+        });
+        const rep = group[0];
+        const author = rep.author;
+
+        const div = document.createElement("div");
+        div.style.cssText = "background:#222; padding:6px; border:1px solid #444; border-radius:4px; width:120px; cursor:pointer; text-align:center;";
+        div.title = `${series} by ${author} (${totalInSeries} book${totalInSeries > 1 ? 's' : ''} in list)`;
+
+        div.innerHTML = `
+            <strong class="profile-book-title">${series}</strong>
+            <span class="profile-book-author">${author} (${totalInSeries})</span>
         `;
-        
-        row.querySelector(".color-picker").addEventListener("change", (e) => {
-            shelfColors[s] = e.target.value;
-            saveAllToStorage();
-        });
-        
-        row.querySelector(".delete-shelf").addEventListener("click", () => {
-            if(confirm(`Remove shelf "${s}" from all books?`)) {
-                books.forEach(b => b.shelves = b.shelves.filter(x => x !== s));
-                saveAllToStorage();
-                renderShelfManager();
-            }
-        });
-        div.appendChild(row);
+
+        div.addEventListener("click", () => openEditModal(rep));
+
+        container.appendChild(div);
+    });
+
+    // Render individual books without a series
+    noSeriesBooks.forEach(b => {
+        const div = document.createElement("div");
+        div.style.cssText = "background:#222; padding:6px; border:1px solid #444; border-radius:4px; width:120px; cursor:pointer; text-align:center;";
+        div.title = `${b.title} — ${b.author}`;
+
+        div.innerHTML = `
+            <strong class="profile-book-title">${b.title}</strong>
+            <span class="profile-book-author">${b.author}</span>
+        `;
+
+        div.addEventListener("click", () => openEditModal(b));
+
+        container.appendChild(div);
     });
 }
 
-// Goal Inputs
-function loadGoalsForYear() {
-    const y = document.getElementById("goalYear").value;
-    const g = goals[y] || {};
-    document.getElementById("yearBooksGoal").value = g.books || "";
-    document.getElementById("yearGoal").value = g.pages || "";
-}
-document.getElementById("goalYear").addEventListener("change", loadGoalsForYear);
-
-document.getElementById("saveGoal").addEventListener("click", () => {
-    const y = document.getElementById("goalYear").value;
-    goals[y] = {
-        books: Number(document.getElementById("yearBooksGoal").value) || 0,
-        pages: Number(document.getElementById("yearGoal").value) || 0
-    };
-    saveAllToStorage();
-    alert("Goals saved!");
-});
-
-// Import / Export
-document.getElementById("exportData").addEventListener("click", () => {
-    const data = JSON.stringify({ books, goals, profile, shelfColors }, null, 2);
-    const blob = new Blob([data], {type: "application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "reading-list-backup.json";
-    a.click();
-});
-
-document.getElementById("fileInput").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-        try {
-            const d = JSON.parse(ev.target.result);
-            if (d.books) books = d.books;
-            if (d.goals) goals = d.goals;
-            if (d.profile) profile = d.profile;
-            if (d.shelfColors) shelfColors = d.shelfColors;
-            saveAllToStorage();
-            alert("Import successful!");
-            location.reload();
-        } catch (err) {
-            alert("Error importing file: " + err);
-        }
-    };
-    reader.readAsText(file);
-});
-
-document.getElementById("clearStorage").addEventListener("click", () => {
-    if (confirm("Delete EVERYTHING? This cannot be undone.")) {
-        localStorage.clear();
-        location.reload();
-    }
-});
-
-// Initial Render
-window.addEventListener('DOMContentLoaded', () => {
-    // 1. Wymuś załadowanie danych z localStorage na start
-    loadAllFromStorage(); 
-    
-    // 2. Ustaw status wizualny, jeśli Firebase jeszcze "myśli"
-    const statusEl = document.getElementById("syncStatus");
-    if (statusEl.textContent === "Loading local data...") {
-        statusEl.textContent = "Wczytywanie danych...";
-    }
-
-    // 3. Przełącz na zapamiętaną zakładkę i wyrenderuj
-    const savedTab = localStorage.getItem(TAB_KEY) || "list";
-    switchTab(savedTab);
-    
-    // 4. Dodatkowe wymuszenie renderowania tabeli
-    renderTable(); 
-});
+// Initial profile load
+if (profile.picture) document.getElementById("profilePic").src = profile.picture;
+document.getElementById("profileNick").value = profile.nick || "";
+document.getElementById("profileBio").value = profile.bio || "";
+renderProfileStats();
+renderRecentBooks();
+renderFavourites();
 
 </script>
 </body>
 </html>
+
+
+
+
