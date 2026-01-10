@@ -203,7 +203,7 @@ button.danger:hover {
 <h3>Manage Shelves</h3>
 <div id="shelfManager"></div>
 <hr style="border:1px solid #333; margin:16px 0;">
-Version 1.0.0.6
+Version 1.0.0.7
 </section>
 <!-- Edit Book Modal -->
 <div id="editModal" style="
@@ -341,21 +341,17 @@ auth.onAuthStateChanged(user => {
 
 
 function saveToFirebase() {
-    console.log("Current user:", currentUser);
     if (!currentUser || !dbRef) {
-        showPopup("Not signed in.", false);
+        showPopup("Please sign in first.", false);
         return;
     }
-
-    saveToStorage();
-
     const data = {
-        books: localStorage.getItem(STORAGE_KEY),
-        profile: localStorage.getItem(PROFILE_KEY),
-        goals: localStorage.getItem(GOALS_KEY),
-        shelfColors: localStorage.getItem(SHELF_COLORS_KEY),
-        showNumbers: localStorage.getItem(SHOW_NUM_KEY),
-        activeTab: localStorage.getItem(TAB_KEY)
+        books: books,
+        profile: profile,
+        goals: goals,
+        shelfColors: shelfColors,
+        showNumbers: document.getElementById("showNumbers").checked,
+        activeTab: localStorage.getItem(TAB_KEY) || "list"
     };
 
     dbRef.set(data)
@@ -389,28 +385,29 @@ function showPopup(message, success = true) {
 function loadFromFirebase() {
     if (!currentUser || !dbRef) return;
 
-    // Remove previous listener if any
-    if (isApplyingRemote) dbRef.off();
-    
-    dbRef.on("value", snapshot => {
+    // Use .once to prevent the "save-trigger-load" loop
+    dbRef.once("value").then(snapshot => {
         const data = snapshot.val();
         if (!data) return;
 
-        isApplyingRemote = true;
-        localStorage.setItem(STORAGE_KEY, data.books || "[]");
-        localStorage.setItem(PROFILE_KEY, data.profile || "{}");
-        localStorage.setItem(GOALS_KEY, data.goals || "{}");
-        localStorage.setItem(SHELF_COLORS_KEY, data.shelfColors || "{}");
-        localStorage.setItem(SHOW_NUM_KEY, data.showNumbers || "true");
-        localStorage.setItem(TAB_KEY, data.activeTab || "list");
+        // Update local variables directly
+        books = typeof data.books === 'string' ? JSON.parse(data.books) : (data.books || []);
+        profile = typeof data.profile === 'string' ? JSON.parse(data.profile) : (data.profile || {favourites: []});
+        goals = typeof data.goals === 'string' ? JSON.parse(data.goals) : (data.goals || {});
+        shelfColors = typeof data.shelfColors === 'string' ? JSON.parse(data.shelfColors) : (data.shelfColors || {});
 
-        loadFromStorage();
+        // Sync to localStorage so it persists even if offline later
+        saveToStorage(); 
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+        localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
+        localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
+
+        // Refresh UI
         renderTable();
         renderStats();
         renderProfileStats();
         renderRecentBooks();
         renderFavourites();
-        isApplyingRemote = false;
     });
 }
 
@@ -1363,6 +1360,7 @@ renderFavourites();
 </script>
 </body>
 </html>
+
 
 
 
