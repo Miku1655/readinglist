@@ -31,8 +31,10 @@ tr:hover { background: #1f1f1f; }
 .stats-year { margin-top: 6px; font-size: 0.85em; color: #ccc; }
 #statsChart { background: #1a1a1a; border: 1px solid #333; padding: 10px; border-radius: 6px; margin-top:20px; }
 .card-container { display: flex; flex-wrap: wrap; gap: 12px; }
-.book-card { background:#222; padding:10px; border:1px solid #444; border-radius:6px; width:160px; text-align:center; cursor:pointer; position:relative; }
+.book-card { background:#222; padding:10px; border:1px solid #444; border-radius:6px; width:160px; text-align:center; cursor:pointer; position:relative; height:100px; display:flex; flex-direction:column; justify-content:center; }
 .book-card:hover { background:#2a2a2a; }
+.book-card .profile-book-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.95em; }
+.book-card .profile-book-author { display: block; margin-top: 4px; font-size: 0.85em; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .book-card small { display:block; margin-top:4px; font-size:0.8em; color:#ccc; }
 .modal-footer { display: flex; justify-content: space-between; align-items: center; margin-top:12px; }
 .modal-actions-right { display: flex; gap: 8px; }
@@ -41,6 +43,9 @@ button.danger:hover { background-color: #a83838; }
 #filterInfo { cursor: help; color: #888; }
 #cloudButtons { margin-top: 12px; }
 .profile-recent-section h4 { margin: 16px 0 8px 0; font-size:1em; }
+#goalsSection { background: #1a1a1a; padding: 16px; border: 1px solid #333; border-radius: 8px; margin: 16px 0; }
+#goalsSection h3 { margin-top: 0; }
+#goalsSection .goals-inline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -117,12 +122,16 @@ button.danger:hover { background-color: #a83838; }
     <button id="exportData">Export list</button>
     <button id="clearStorage" style="margin-left:12px;">Clear local list data</button>
     <hr style="border:1px solid #333; margin:16px 0;">
-    <label>Year for goals: <input type="number" id="goalYear" style="width:80px;" value="2026"></label><br>
-    <label>Yearly pages goal: <input type="number" id="yearGoal" style="width:100px;"></label><br>
-    <label>Yearly books goal: <input type="number" id="yearBooksGoal" style="width:100px;"></label><br>
-    <button id="saveGoal">Save</button>
-    <button id="removeGoal" style="margin-left:12px;">Remove goals for year</button>
-    <hr style="border:1px solid #333; margin:16px 0;">
+    <div id="goalsSection">
+        <h3>Yearly Goals</h3>
+        <div class="goals-inline">
+            <label>Year: <input type="number" id="goalYear" style="width:80px;" value="2026"></label>
+            <label>Books goal: <input type="number" id="yearBooksGoal" style="width:100px;"></label>
+            <label>Pages goal: <input type="number" id="yearGoal" style="width:100px;"></label>
+            <button id="saveGoal">Save</button>
+            <button id="removeGoal">Remove</button>
+        </div>
+    </div>
     <label><input type="checkbox" id="showNumbers" checked> Show row numbers</label>
     <hr style="border:1px solid #333; margin:16px 0;">
     <h3>Cloud Sync (Firebase - Manual only)</h3>
@@ -140,7 +149,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.0.8 (favourites with series, recent activity sections, selective recent bump, simplified stats)
+    Version 1.0.9 (final tweaks: cropped titles, author below, count=0 unread, nicer goals, finish-date positioning)
 </section>
 
 <!-- Edit Modal -->
@@ -161,10 +170,11 @@ button.danger:hover { background-color: #a83838; }
         <label>Pages: <input type="number" id="editPages"></label><br>
         <label>Year: <input type="number" id="editYear"></label><br>
         <label>Date Read(s) (comma separated): <input type="text" id="editDateRead"></label><br>
-        <label>Read Count: <input type="number" id="editReadCount" min="1" value="1"></label><br>
+        <label>Read Count: <input type="number" id="editReadCount" min="0" value="1"></label><br>
         <label>Rating (0-5): <input type="number" id="editRating" min="0" max="5"></label><br>
         <label>Favourite book: <input type="checkbox" id="editFavourite"></label><br>
         <label id="favSeriesLabel">Favourite series: <input type="checkbox" id="editFavouriteSeries"></label><br>
+        <label id="positionByFinishLabel">Position in recent by latest finish date: <input type="checkbox" id="editPositionByFinish"></label><br>
         <label>Bump to top in recent sort: <input type="checkbox" id="editBumpRecent"></label><br>
         <textarea id="editNotes" placeholder="Notes" style="width:100%; height:80px; resize:vertical;"></textarea>
         <div class="modal-footer">
@@ -257,7 +267,6 @@ function loadLocalData() {
         books = [];
     }
 
-    // Ensure stable importOrder
     let maxOrder = 0;
     books.forEach(b => {
         if (!b.importOrder) b.importOrder = nextImportOrder++;
@@ -388,12 +397,11 @@ function openEditModal(book = null) {
     document.getElementById("editPages").value = book?.pages || "";
     document.getElementById("editYear").value = book?.year || "";
     document.getElementById("editDateRead").value = book?.dateRead || "";
-    document.getElementById("editReadCount").value = book?.readCount || 1;
+    document.getElementById("editReadCount").value = book?.readCount ?? 1;
     document.getElementById("editRating").value = book?.rating || 0;
     document.getElementById("editNotes").value = book?.notes || "";
     document.getElementById("editFavourite").checked = !!book && profile.favourites.includes(book.importOrder);
 
-    // Favourite series
     const series = book?.series || "";
     if (series) {
         document.getElementById("favSeriesLabel").style.display = "block";
@@ -401,6 +409,10 @@ function openEditModal(book = null) {
     } else {
         document.getElementById("favSeriesLabel").style.display = "none";
     }
+
+    const isRead = (book?.exclusiveShelf || document.getElementById("editExclusiveShelf").value) === "read";
+    document.getElementById("positionByFinishLabel").style.display = isRead ? "block" : "none";
+    document.getElementById("editPositionByFinish").checked = false;
 
     document.getElementById("editBumpRecent").checked = false;
 
@@ -438,8 +450,8 @@ function createSeriesCard(series) {
     const div = document.createElement("div");
     div.className = "book-card";
     div.innerHTML = `
-        <strong>${series}</strong>
-        <span>${author}</span>
+        <strong class="profile-book-title">${series}</strong>
+        <span class="profile-book-author">${author}</span>
         <small>${count} book${count > 1 ? 's' : ''}</small>
     `;
     div.title = `${series} (${count} books)`;
@@ -518,7 +530,7 @@ function renderTable() {
             <td>${book.pages || "-"}</td>
             <td>${book.year || "-"}</td>
             <td>${book.dateRead || "-"}</td>
-            <td>${book.readCount || "-"}</td>
+            <td>${book.readCount ?? "-"}</td>
             <td><button class="editBtn" style="padding:2px 6px;">✎</button></td>
         `;
         tbody.appendChild(tr);
@@ -595,36 +607,15 @@ function filterBooksByQuery(list, query) {
         let match = true;
         for (const term of terms) {
             let m;
-            if ((m = term.match(/^status([!=]?=)(.+)$/))) {
-                const val = m[2];
-                const eq = m[1] === "=" || m[1] === "==";
-                match = match && (eq ? book.exclusiveShelf?.toLowerCase() === val : book.exclusiveShelf?.toLowerCase() !== val);
-            } else if ((m = term.match(/^pages([<>=!]+)(\d+)$/))) {
-                const op = m[1], num = Number(m[2]);
-                const p = book.pages || 0;
-                if (op === ">") match = match && p > num;
-                else if (op === ">=") match = match && p >= num;
-                else if (op === "<") match = match && p < num;
-                else if (op === "<=") match = match && p <= num;
-                else if (op === "=") match = match && p === num;
-                else if (op === "!=") match = match && p !== num;
-            } else if ((m = term.match(/^year([<>=!]+)(\d{4})$/))) {
-                const op = m[1], num = Number(m[2]);
-                const y = book.year;
-                if (op === ">") match = match && y > num;
-                else if (op === ">=") match = match && y >= num;
-                else if (op === "<") match = match && y < num;
-                else if (op === "<=") match = match && y <= num;
-                else if (op === "=") match = match && y === num;
-                else if (op === "!=") match = match && y !== num;
-            } else if ((m = term.match(/^count([<>=!]+)(\d+)$/))) {
-                const op = m[1], num = Number(m[2]);
-                const c = book.readCount || 1;
+            if ((m = term.match(/^count([<>=!]+)?(\d+)$/))) {
+                let op = m[1] || "=";
+                const num = Number(m[2]);
+                const c = book.readCount ?? 0;
                 if (op === ">") match = match && c > num;
                 else if (op === ">=") match = match && c >= num;
                 else if (op === "<") match = match && c < num;
                 else if (op === "<=") match = match && c <= num;
-                else if (op === "=") match = match && c === num;
+                else if (op === "=" || op === "==") match = match && c === num;
                 else if (op === "!=") match = match && c !== num;
             } else if ((m = term.match(/^date([<>=!]+)(\d{4})$/))) {
                 const op = m[1], num = Number(m[2]);
@@ -690,7 +681,6 @@ function renderStats() {
 
     let html = "";
 
-    // Prominent goals
     if (pagesGoal || booksGoal) {
         html += `
             <div style="background:#222; padding:20px; border:1px solid #555; border-radius:8px; margin-bottom:30px; text-align:center;">
@@ -701,7 +691,6 @@ function renderStats() {
         `;
     }
 
-    // Other stats
     html += `
         <h2>Overall Stats</h2>
         <div class="stats-grid">
@@ -755,7 +744,6 @@ function renderRecentBooks() {
     const container = document.getElementById("recentBooksContainer");
     container.innerHTML = "";
 
-    // Currently reading
     let currently = books.filter(b => b.exclusiveShelf === "currently-reading");
     if (currently.length) {
         container.innerHTML += "<h4>Currently Reading</h4><div class=\"card-container\"></div>";
@@ -763,7 +751,6 @@ function renderRecentBooks() {
         currently.forEach(b => container.lastChild.appendChild(createBookCard(b)));
     }
 
-    // Recently finished (last 8)
     let finished = books.filter(b => b.exclusiveShelf === "read" && b.dateRead);
     if (finished.length) {
         container.innerHTML += "<h4>Recently Finished</h4><div class=\"card-container\"></div>";
@@ -771,7 +758,6 @@ function renderRecentBooks() {
         finished.slice(0, 8).forEach(b => container.lastChild.appendChild(createBookCard(b)));
     }
 
-    // Recently added to-read (last 4)
     let toread = books.filter(b => b.exclusiveShelf === "to-read");
     if (toread.length) {
         container.innerHTML += "<h4>Recently Added to To-Read</h4><div class=\"card-container\"></div>";
@@ -779,7 +765,7 @@ function renderRecentBooks() {
         toread.slice(0, 4).forEach(b => container.lastChild.appendChild(createBookCard(b)));
     }
 
-    if (!container.innerHTML) {
+    if (!container.innerHTML.trim()) {
         container.innerHTML = "<p>No activity yet.</p>";
     }
 }
@@ -787,10 +773,8 @@ function renderRecentBooks() {
 function renderFavourites() {
     const container = document.getElementById("favouritesContainer");
     container.innerHTML = "";
-
     let hasContent = false;
 
-    // Favourite series
     if (profile.favouriteSeries.length) {
         container.innerHTML += "<h4>Favourite Series</h4><div class=\"card-container\"></div>";
         profile.favouriteSeries.sort();
@@ -803,7 +787,6 @@ function renderFavourites() {
         });
     }
 
-    // Favourite individual books
     if (profile.favourites.length) {
         const favBooks = books.filter(b => profile.favourites.includes(b.importOrder));
         if (favBooks.length) {
@@ -1001,27 +984,43 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         pages: Number(document.getElementById("editPages").value) || 0,
         year: Number(document.getElementById("editYear").value) || null,
         dateRead: document.getElementById("editDateRead").value.trim(),
-        readCount: Number(document.getElementById("editReadCount").value) || 1,
+        readCount: Number(document.getElementById("editReadCount").value) || 0,
         rating: Number(document.getElementById("editRating").value) || 0,
         notes: document.getElementById("editNotes").value.trim()
     };
 
-    let updateModified = document.getElementById("editBumpRecent").checked;
+    let newModified = null;
+
+    const bumpNow = document.getElementById("editBumpRecent").checked;
+    const positionByFinish = document.getElementById("editPositionByFinish").checked;
+
+    if (positionByFinish && data.exclusiveShelf === "read" && data.dateRead) {
+        const dates = data.dateRead.split(",").map(d => d.trim()).filter(Boolean);
+        const timestamps = dates.map(d => new Date(d).getTime()).filter(t => !isNaN(t));
+        if (timestamps.length) {
+            newModified = Math.max(...timestamps);
+        }
+    }
+
+    if (bumpNow || newModified === null) {
+        newModified = now;
+    }
 
     if (editingBook) {
         const oldStatus = editingBook.exclusiveShelf;
-        if (data.exclusiveShelf !== oldStatus) updateModified = true;
+        const statusChanged = data.exclusiveShelf !== oldStatus;
         Object.assign(editingBook, data);
-        if (updateModified) editingBook.lastModified = now;
+        if (statusChanged || bumpNow || positionByFinish) {
+            editingBook.lastModified = newModified;
+        }
     } else {
         data.importOrder = nextImportOrder++;
-        data.lastModified = now;
+        data.lastModified = newModified;
         books.unshift(data);
     }
 
     const bookId = editingBook ? editingBook.importOrder : data.importOrder;
 
-    // Individual favourite
     const isFav = document.getElementById("editFavourite").checked;
     if (isFav) {
         if (!profile.favourites.includes(bookId)) profile.favourites.push(bookId);
@@ -1029,7 +1028,6 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         profile.favourites = profile.favourites.filter(id => id !== bookId);
     }
 
-    // Series favourite (add only)
     const isFavSeries = document.getElementById("editFavouriteSeries").checked;
     if (isFavSeries && data.series && !profile.favouriteSeries.includes(data.series)) {
         profile.favouriteSeries.push(data.series);
@@ -1063,6 +1061,7 @@ document.getElementById("filterInfo").addEventListener("click", () => {
 • pages>300 pages<=100
 • year>=2020
 • count>1 (rereads)
+• count=0 (never read)
 • date=2024 (first read year)
 Combine with spaces (AND).`);
 });
