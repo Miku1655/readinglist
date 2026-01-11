@@ -186,7 +186,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.7.1 – fixed modal save/close, last read date, recent sort, and other bugs
+    Version 1.8 – manual date added in edit modal + fixed recent sort logic (priority: last finished > current start > date added, no date at bottom, toggle newest/oldest)
 </section>
 
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
@@ -201,6 +201,7 @@ button.danger:hover { background-color: #a83838; }
                 <label>Series #: <input type="number" id="editSeriesNumber" step="0.1" style="width:140px;"></label><br>
                 <label>Pages: <input type="number" id="editPages"></label><br>
                 <label>Year: <input type="number" id="editYear"></label><br>
+                <label>Date Added: <input type="date" id="editDateAdded"></label><br>
                 <label>Rating (0-5): <input type="number" id="editRating" min="0" max="5"></label><br>
                 <label>Favourite book: <input type="checkbox" id="editFavourite"></label><br>
                 <label id="favSeriesLabel">Favourite series: <input type="checkbox" id="editFavouriteSeries"></label><br>
@@ -283,7 +284,7 @@ let userRef = null;
 let editingBook = null;
 let books = [];
 let nextImportOrder = 1;
-let sortState = { column: null, direction: 1 };
+let sortState = { column: null, direction: -1 }; // -1 = newest first for recent sort
 const STORAGE_KEY = "reading_list_data";
 const SHOW_NUM_KEY = "reading_list_show_numbers";
 const TAB_KEY = "reading_list_active_tab";
@@ -319,12 +320,11 @@ function getCurrentReadStart(book) {
     return current ? current.started || 0 : 0;
 }
 
-function getActivityTimestamp(book) {
-    const latestFinished = getLatestFinished(book);
-    const currentStart = getCurrentReadStart(book);
-    const added = book.dateAdded || 0;
-    const bump = book.bumpTime || 0;
-    return Math.max(latestFinished, currentStart, added, bump);
+function getSortTimestamp(book) {
+    let ts = getLatestFinished(book);
+    if (ts <= 0) ts = getCurrentReadStart(book);
+    if (ts <= 0) ts = book.dateAdded ?? 0;
+    return ts;
 }
 
 function calculateReadingSpeeds() {
@@ -670,20 +670,16 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
             shelfColors = data.shelfColors || {};
             const settings = data.settings || {};
             document.getElementById("showNumbers").checked = settings.showNumbers ?? true;
-            localStorage.setItem(SHOW_NUM_KEY, settings.showNumbers ?? true);
             minAuthorBooks = settings.minAuthorBooks ?? 2;
             minAuthorBooksInput.value = minAuthorBooks;
-            localStorage.setItem(MIN_AUTHOR_BOOKS_KEY, minAuthorBooks);
             showCoversInTimeline = settings.showCoversTimeline ?? false;
             document.getElementById("showCoversTimeline").checked = showCoversInTimeline;
-            localStorage.setItem(SHOW_COVERS_TIMELINE_KEY, JSON.stringify(showCoversInTimeline));
             showYearGoalProgress = settings.showYearGoalProgress ?? true;
             document.getElementById("showYearGoalProgress").checked = showYearGoalProgress;
-            localStorage.setItem(SHOW_YEAR_GOAL_PROGRESS_KEY, JSON.stringify(showYearGoalProgress));
             document.getElementById("profileNick").value = profile.nick || "";
             document.getElementById("profileBio").value = profile.bio || "";
             if (profile.picture) document.getElementById("profilePic").src = profile.picture;
-            loadLocalData(); // re-apply migration if needed
+            loadLocalData();
             saveBooksToLocal();
             localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
             localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
@@ -850,6 +846,8 @@ function openEditModal(book = null) {
     document.getElementById("editNotes").value = book?.notes || "";
     document.getElementById("editCoverUrl").value = book?.coverUrl || "";
 
+    document.getElementById("editDateAdded").value = book?.dateAdded ? new Date(book.dateAdded).toISOString().split('T')[0] : "";
+
     const preview = document.getElementById("coverPreview");
     if (book?.coverUrl) {
         preview.src = book.coverUrl;
@@ -927,6 +925,9 @@ function closeEditModal() {
 document.getElementById("saveEdit").addEventListener("click", () => {
     const now = Date.now();
 
+    const daStr = document.getElementById("editDateAdded").value;
+    const dateAdded = daStr ? new Date(daStr).getTime() : null;
+
     const data = {
         title: document.getElementById("editTitle").value.trim(),
         author: document.getElementById("editAuthor").value.trim(),
@@ -943,7 +944,8 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         rating: Number(document.getElementById("editRating").value) || 0,
         notes: document.getElementById("editNotes").value.trim(),
         coverUrl: document.getElementById("editCoverUrl").value.trim() || null,
-        reads: editingBook.reads.map(r => ({ started: r.started, finished: r.finished }))
+        reads: editingBook.reads.map(r => ({ started: r.started, finished: r.finished })),
+        dateAdded: dateAdded
     };
 
     if (data.exclusiveShelf === "currently-reading") {
@@ -954,8 +956,13 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         data.reads = data.reads.filter(r => r.finished !== null);
     }
 
+    // For new books, if dateAdded still null, set to now
+    if (!editingBook?.importOrder && data.dateAdded === null) {
+        data.dateAdded = now;
+    }
+
     let savedBook;
-    if (editingBook.importOrder) {
+    if (editingBook?.importOrder) {
         const index = books.findIndex(b => b.importOrder === editingBook.importOrder);
         if (index !== -1) {
             books[index] = { ...books[index], ...data };
@@ -963,7 +970,6 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         }
     } else {
         data.importOrder = nextImportOrder++;
-        data.dateAdded = now;
         books.unshift(data);
         savedBook = data;
     }
@@ -1099,11 +1105,20 @@ function renderTable() {
     }
     const query = document.getElementById("searchInput").value.trim();
     if (query) list = filterBooksByQuery(list, query);
+
     if (sortState.column) {
         list.sort((a, b) => compare(a, b, sortState.column) * sortState.direction);
     } else {
-        list.sort((a, b) => (getActivityTimestamp(b) - getActivityTimestamp(a)) * sortState.direction);
+        // Recent sort: has timestamp first, then by timestamp, no timestamp at bottom
+        list.sort((a, b) => {
+            const hasA = getSortTimestamp(a) > 0 ? 1 : 0;
+            const hasB = getSortTimestamp(b) > 0 ? 1 : 0;
+            if (hasA !== hasB) return hasB - hasA; // has timestamp first
+            const diff = getSortTimestamp(a) - getSortTimestamp(b);
+            return diff * sortState.direction;
+        });
     }
+
     list.forEach((book, idx) => {
         const tr = document.createElement("tr");
         const shelvesDisplay = [book.exclusiveShelf, ...(book.shelves || [])].filter(Boolean)
@@ -1370,7 +1385,7 @@ function renderShelfManager() {
 function renderRecentBooks() {
     const container = document.getElementById("recentBooksContainer");
     container.innerHTML = "";
-    const sortDesc = (a, b) => getActivityTimestamp(b) - getActivityTimestamp(a);
+    const sortDesc = (a, b) => getSortTimestamp(b) - getSortTimestamp(a);
     let currently = books.filter(b => b.exclusiveShelf === "currently-reading");
     if (currently.length) {
         const section = document.createElement("div");
@@ -1524,7 +1539,7 @@ function updateSortIndicators() {
         const el = document.querySelector(`th[data-col="${sortState.column}"] .sort`);
         if (el) el.textContent = sortState.direction > 0 ? "▲" : "▼";
     } else {
-        document.getElementById("recentSortIndicator").textContent = sortState.direction > 0 ? "▼" : "▲";
+        document.getElementById("recentSortIndicator").textContent = sortState.direction === -1 ? "▼" : "▲";
     }
 }
 
@@ -1538,7 +1553,7 @@ document.getElementById("sortRecent").addEventListener("click", () => {
         sortState.direction *= -1;
     } else {
         sortState.column = null;
-        sortState.direction = 1;
+        sortState.direction = -1; // default to newest first
     }
     updateSortIndicators();
     renderTable();
