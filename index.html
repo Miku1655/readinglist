@@ -91,6 +91,7 @@ button.danger:hover { background-color: #a83838; }
                 <th data-col="shelves">Shelves <span class="sort"></span></th>
                 <th data-col="pages">Pages <span class="sort"></span></th>
                 <th data-col="year">Year <span class="sort"></span></th>
+                <th data-col="lastRead">Last Read <span class="sort"></span></th>
                 <th data-col="readCount">Reads <span class="sort"></span></th>
                 <th>Edit</th>
             </tr>
@@ -189,7 +190,6 @@ button.danger:hover { background-color: #a83838; }
     Version 1.7 – tags, reading speeds, multi-read support, cleaner edit modal, Challenges tab
 </section>
 
-<!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
     <div style="background:#222; padding:20px; border:1px solid #444; max-width:600px; width:100%; max-height:90vh; overflow-y:auto;">
         <h3>Edit Book</h3>
@@ -832,9 +832,9 @@ function renderAll() {
     if (document.querySelector('.tab.active')?.dataset.tab === "options") renderShelfManager();
 }
 
-// Edit modal
+// Fixed openEditModal – no recreation on status change
 function openEditModal(book = null) {
-    editingBook = book || { reads: [], tags: [] };
+    editingBook = book || { reads: [], tags: [], exclusiveShelf: "to-read" };
 
     document.getElementById("editTitle").value = book?.title || "";
     document.getElementById("editAuthor").value = book?.author || "";
@@ -845,8 +845,8 @@ function openEditModal(book = null) {
     document.getElementById("editGenre").value = book?.genre || "";
     document.getElementById("editTags").value = (book?.tags || []).join(", ");
     document.getElementById("editShelves").value = (book?.shelves || []).join(", ");
-    document.getElementById("editExclusiveShelf").value = book?.exclusiveShelf || "to-read";
-    document.getElementById("editPages").value = book?.pages || "";
+    document.getElementById("editExclusiveShelf").value = editingBook.exclusiveShelf || "to-read";
+document.getElementById("editPages").value = book?.pages || "";
     document.getElementById("editYear").value = book?.year || "";
     document.getElementById("editRating").value = book?.rating || 0;
     document.getElementById("editNotes").value = book?.notes || "";
@@ -870,53 +870,61 @@ function openEditModal(book = null) {
         document.getElementById("favSeriesLabel").style.display = "none";
     }
 
-    // Dynamic reads list
+    // Build reads list
     const readsList = document.getElementById("readsList");
     readsList.innerHTML = "";
-    const reads = editingBook.reads || [];
-    reads.forEach((read, idx) => {
-        const div = document.createElement("div");
-        div.className = "read-entry";
-        div.innerHTML = `
-            <input type="date" class="readStart" value="${read.started ? new Date(read.started).toISOString().substring(0,10) : ''}">
-            <input type="date" class="readFinish" value="${read.finished ? new Date(read.finished).toISOString().substring(0,10) : ''}">
-            <button type="button" class="removeRead">Remove</button>
-        `;
-        div.querySelector(".removeRead").addEventListener("click", () => {
-            reads.splice(idx, 1);
-            openEditModal(editingBook);
+    const reads = editingBook.reads;
+
+    function rebuildReadsList() {
+        readsList.innerHTML = "";
+        reads.forEach((read, idx) => {
+            const div = document.createElement("div");
+            div.className = "read-entry";
+            div.innerHTML = `
+                <input type="date" class="readStart" value="${read.started ? new Date(read.started).toISOString().substring(0,10) : ''}">
+                <input type="date" class="readFinish" value="${read.finished ? new Date(read.finished).toISOString().substring(0,10) : ''}">
+                <button type="button" class="removeRead">Remove</button>
+            `;
+            div.querySelector(".removeRead").onclick = () => {
+                reads.splice(idx, 1);
+                rebuildReadsList();
+            };
+            div.querySelector(".readStart").onchange = () => read.started = div.querySelector(".readStart").value ? new Date(div.querySelector(".readStart").value).getTime() : null;
+            div.querySelector(".readFinish").onchange = () => read.finished = div.querySelector(".readFinish").value ? new Date(div.querySelector(".readFinish").value).getTime() : null;
+            readsList.appendChild(div);
         });
-        readsList.appendChild(div);
-    });
+    }
+
+    rebuildReadsList();
 
     // Add read button
     document.getElementById("addReadBtn").onclick = () => {
         reads.push({ started: Date.now(), finished: null });
-        openEditModal(editingBook);
+        rebuildReadsList();
     };
 
-    // Status change handling
+    // Status change – update reads list without recreating modal
     document.getElementById("editExclusiveShelf").onchange = () => {
         const status = document.getElementById("editExclusiveShelf").value;
+        editingBook.exclusiveShelf = status;
         if (status === "currently-reading") {
             if (reads.length === 0 || reads[reads.length - 1].finished !== null) {
                 reads.push({ started: Date.now(), finished: null });
             }
+        } else if (status !== "read") {
+            // Remove any open read
+            reads = reads.filter(r => r.finished !== null);
         }
-        openEditModal(editingBook);
+        rebuildReadsList();
     };
 
     document.getElementById("editModal").style.display = "flex";
 }
 
-function closeEditModal() {
-    editingBook = null;
-    document.getElementById("editModal").style.display = "none";
-}
-
-// Save edit
+// Fixed saveEdit – properly handles new books
 document.getElementById("saveEdit").addEventListener("click", () => {
     const now = Date.now();
+
     const data = {
         title: document.getElementById("editTitle").value.trim(),
         author: document.getElementById("editAuthor").value.trim(),
@@ -932,24 +940,11 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         year: Number(document.getElementById("editYear").value) || null,
         rating: Number(document.getElementById("editRating").value) || 0,
         notes: document.getElementById("editNotes").value.trim(),
-        coverUrl: document.getElementById("editCoverUrl").value.trim() || null
+        coverUrl: document.getElementById("editCoverUrl").value.trim() || null,
+        reads: editingBook.reads.map(r => ({ started: r.started, finished: r.finished })) // copy
     };
 
-    // Collect reads
-    const readEntries = document.querySelectorAll(".read-entry");
-    const newReads = [];
-    readEntries.forEach(entry => {
-        const startVal = entry.querySelector(".readStart").value;
-        const finishVal = entry.querySelector(".readFinish").value;
-        const started = startVal ? new Date(startVal).getTime() : null;
-        const finished = finishVal ? new Date(finishVal).getTime() : null;
-        if (started !== null || finished !== null) {
-            newReads.push({ started, finished });
-        }
-    });
-    data.reads = newReads;
-
-    // Ensure currently-reading has an open read
+    // Ensure currently-reading has open read
     if (data.exclusiveShelf === "currently-reading") {
         if (data.reads.length === 0 || data.reads[data.reads.length - 1].finished !== null) {
             data.reads.push({ started: now, finished: null });
@@ -958,17 +953,24 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         data.reads = data.reads.filter(r => r.finished !== null);
     }
 
-    if (editingBook) {
-        Object.assign(editingBook, data);
+    let savedBook;
+    if (editingBook && editingBook.importOrder) {
+        // Existing book – update in place
+        const index = books.findIndex(b => b.importOrder === editingBook.importOrder);
+        if (index !== -1) {
+            books[index] = { ...books[index], ...data };
+            savedBook = books[index];
+        }
     } else {
+        // New book
         data.importOrder = nextImportOrder++;
         data.dateAdded = now;
         books.unshift(data);
-        editingBook = data;
+        savedBook = data;
     }
 
-    // Favourites
-    const bookId = editingBook.importOrder;
+    // Favourites handling (unchanged)
+    const bookId = savedBook.importOrder;
     const isFav = document.getElementById("editFavourite").checked;
     if (isFav) {
         if (!profile.favourites.includes(bookId)) profile.favourites.push(bookId);
@@ -987,7 +989,6 @@ document.getElementById("saveEdit").addEventListener("click", () => {
     renderAll();
     closeEditModal();
 });
-
 // Search with tag support
 function filterBooksByQuery(list, query) {
     const terms = query.toLowerCase().match(/\S+/g) || [];
@@ -1121,6 +1122,8 @@ function renderTable() {
             <td>${shelvesDisplay}</td>
             <td>${book.pages || "-"}</td>
             <td>${book.year ?? "-"}</td>
+            <td>${book.reads && book.reads.length > 0 ? new Date(getLatestFinished(book)).toLocaleDateString() : "-"}</td>
+            <td>${getReadCount(book)}</td>
             <td>${getReadCount(book)}</td>
             <td><button class="editBtn" style="padding:2px 6px;">✎</button></td>
         `;
@@ -1133,6 +1136,15 @@ function renderTable() {
             icon.addEventListener("mouseleave", () => hideNotePopup(popup));
         }
     });
+}
+
+// Fixed recent sort – fallback to dateAdded
+function getActivityTimestamp(book) {
+    const latestFinished = getLatestFinished(book);
+    const currentStart = getCurrentReadStart(book);
+    const added = book.dateAdded || 0;
+    const bump = book.bumpTime || 0;
+    return Math.max(latestFinished, currentStart, added, bump);
 }
 
 // Timeline using all finished reads
@@ -1509,6 +1521,9 @@ function compare(a, b, col) {
         av = av ?? 0;
         bv = bv ?? 0;
         return av - bv;
+    }
+    if (col === "lastRead") {
+        return getLatestFinished(a) - getLatestFinished(b);
     }
     if (col === "readCount") {
         av = getReadCount(a);
