@@ -36,7 +36,7 @@ tr:hover { background: #1f1f1f; }
 .card-container { display: flex; flex-wrap: wrap; gap: 12px; }
 .book-card { background:#222; padding:8px; border:1px solid #444; border-radius:6px; width:160px; height:auto; min-height:200px; text-align:center; cursor:pointer; position:relative; display:flex; flex-direction:column; }
 .book-card:hover { background:#2a2a2a; }
-.book-card.dragging { opacity: 0.5; }
+.book-card.dragging { opacity: 0.5; z-index: 10; }
 .book-card img { width:100%; height:140px; object-fit:contain; background:#1a1a1a; margin-bottom:8px; }
 .book-card .no-cover { width:100%; height:140px; background:#1a1a1a; margin-bottom:8px; display:flex; align-items:center; justify-content:center; color:#666; font-size:0.8em; }
 .book-card .profile-book-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.95em; }
@@ -85,6 +85,7 @@ button.danger:hover { background-color: #a83838; }
         Search: <input type="text" id="searchInput" style="width:300px" placeholder="Search title, author, series or use filters">
         <span id="filterInfo">?</span>
     </label>
+    <div id="yearGoalProgressContainer" style="margin:16px 0;"></div>
     <table>
         <thead>
             <tr>
@@ -152,11 +153,12 @@ button.danger:hover { background-color: #a83838; }
     <div id="generalSettings">
         <h3>General Settings</h3>
         <label><input type="checkbox" id="showNumbers" checked> Show row numbers</label><br><br>
-        <label>Min books read for author avg rating: <input type="number" id="minAuthorBooks" min="1" value="2" style="width:80px;"></label>
+        <label>Min books read for author avg rating: <input type="number" id="minAuthorBooks" min="1" value="2" style="width:80px;"></label><br><br>
+        <label><input type="checkbox" id="showYearGoalProgress" checked> Show current year goal progress bar on List tab</label>
     </div>
     <div id="coversSection">
         <h3>Covers Management</h3>
-		<p id="coversCount"></p>
+        <p id="coversCount"></p>
         <label><input type="checkbox" id="showCoversTimeline"> Show book covers in Timeline tab</label><br><br>
         <button id="fetchAllCovers">Auto-fetch missing covers from Google Books</button><br><br>
         <button id="clearLocalCovers">Clear all local covers (irreversible)</button>
@@ -182,7 +184,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.5.1 – covers counter, cover search filter, timeline cover toggle synced
+    Version 1.6 – series numbering, language, goal progress bar, enhanced search, mobile favourite dragging
 </section>
 <!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
@@ -191,6 +193,8 @@ button.danger:hover { background-color: #a83838; }
         <label>Title: <input type="text" id="editTitle" placeholder="Title" style="width:100%;"></label><br>
         <label>Author: <input type="text" id="editAuthor" placeholder="Author" style="width:100%;"></label><br>
         <label>Series: <input type="text" id="editSeries" style="width:100%;"></label><br>
+        <label>Series volume/number: <input type="number" id="editSeriesNumber" step="0.1" placeholder="e.g. 3 or 2.5" style="width:140px;"></label><br>
+        <label>Language: <input type="text" id="editLanguage" placeholder="e.g. English, Japanese" style="width:100%;"></label><br>
         <label>Shelves (comma separated): <input type="text" id="editShelves" style="width:100%;"></label><br>
         <label>Status:
             <select id="editExclusiveShelf" style="width:100%;">
@@ -208,8 +212,8 @@ button.danger:hover { background-color: #a83838; }
         <label>Favourite book: <input type="checkbox" id="editFavourite"></label><br>
         <label id="favSeriesLabel">Favourite series: <input type="checkbox" id="editFavouriteSeries"></label><br>
         <label>Bump to top in recent sort: <input type="checkbox" id="editBumpRecent"></label><br>
-        <label class="hidden-date">Date added (hidden): <input type="date" id="editDateAdded"></label></label><br>
-        <label class="hidden-date">Date started (hidden): <input type="date" id="editDateStarted"></label></label><br>
+        <label class="hidden-date">Date added (hidden): <input type="date" id="editDateAdded"></label><br>
+        <label class="hidden-date">Date started (hidden): <input type="date" id="editDateStarted"></label><br>
         <label>Cover URL (optional): <input type="text" id="editCoverUrl" style="width:100%;"></label>
         <button id="fetchCoverBtn">Auto-fetch from Google Books</button>
         <div style="margin-top:8px;"><img id="coverPreview" style="max-height:250px; max-width:100%; border:1px solid #444;" alt="Cover preview"></div>
@@ -237,7 +241,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
-
 // Element references
 const goalYear = document.getElementById("goalYear");
 const yearBooksGoal = document.getElementById("yearBooksGoal");
@@ -245,8 +248,7 @@ const yearPagesGoal = document.getElementById("yearPagesGoal");
 const cloudButtons = document.getElementById("cloudButtons");
 const coverCloudButtons = document.getElementById("coverCloudButtons");
 const minAuthorBooksInput = document.getElementById("minAuthorBooks");
-
-// Global state
+// Global state & constants
 let currentUser = null;
 let userRef = null;
 let editingBook = null;
@@ -261,12 +263,14 @@ const SHELF_COLORS_KEY = "reading_shelf_colors";
 const PROFILE_KEY = "reading_list_profile";
 const MIN_AUTHOR_BOOKS_KEY = "reading_min_author_books";
 const SHOW_COVERS_TIMELINE_KEY = "reading_show_covers_timeline";
+const SHOW_YEAR_GOAL_PROGRESS_KEY = "reading_show_year_goal_progress";
 let shelfColors = {};
 let goals = {};
 let profile = { favourites: [], favouriteSeries: [] };
 let draggedElement = null;
 let minAuthorBooks = 2;
 let showCoversInTimeline = false;
+let showYearGoalProgress = true;
 let notePopup = null;
 
 // Helpers
@@ -324,14 +328,20 @@ function createBookCard(book) {
     return div;
 }
 function createSeriesCard(series) {
-    const seriesBooks = books.filter(b => b.series === series);
+    let seriesBooks = books.filter(b => b.series === series);
     if (seriesBooks.length === 0) return null;
+    seriesBooks = seriesBooks.sort((a, b) => (a.seriesNumber ?? Infinity) - (b.seriesNumber ?? Infinity));
+    const firstCoverBook = seriesBooks.find(b => b.coverUrl);
     const author = seriesBooks[0].author || "Various";
     const count = seriesBooks.length;
+    let coverHtml = `<div class="no-cover">Series</div>`;
+    if (firstCoverBook) {
+        coverHtml = `<img src="${firstCoverBook.coverUrl}" alt="Cover" onerror="this.style.display='none'">`;
+    }
     const div = document.createElement("div");
     div.className = "book-card";
     div.innerHTML = `
-        <div class="no-cover">Series</div>
+        ${coverHtml}
         <strong class="profile-book-title">${series}</strong>
         <span class="profile-book-author">${author}</span>
         <small>${count} book${count > 1 ? 's' : ''}</small>
@@ -340,6 +350,7 @@ function createSeriesCard(series) {
     return div;
 }
 function makeFavouritesDraggable(container) {
+    // Desktop drag events (existing)
     container.addEventListener("dragstart", e => {
         const card = e.target.closest(".book-card");
         if (card) {
@@ -370,6 +381,40 @@ function makeFavouritesDraggable(container) {
         }
     });
     container.addEventListener("drop", e => e.preventDefault());
+
+    // Mobile touch support
+    container.addEventListener("touchstart", e => {
+        if (e.touches.length === 1) {
+            const card = e.target.closest(".book-card");
+            if (card) {
+                draggedElement = card;
+                card.classList.add("dragging");
+            }
+        }
+    }, {passive: true});
+    container.addEventListener("touchmove", e => {
+        if (!draggedElement) return;
+        e.preventDefault();
+        const touch = e.touches[0];
+        const overElem = document.elementFromPoint(touch.clientX, touch.clientY);
+        const card = overElem ? overElem.closest(".book-card") : null;
+        if (card && card !== draggedElement) {
+            const rect = card.getBoundingClientRect();
+            if (touch.clientY > rect.top + rect.height / 2) {
+                card.after(draggedElement);
+            } else {
+                card.before(draggedElement);
+            }
+        }
+    }, {passive: false});
+    container.addEventListener("touchend", () => {
+        if (draggedElement) {
+            draggedElement.classList.remove("dragging");
+            profile.favourites = Array.from(container.querySelectorAll(".book-card")).map(c => Number(c.dataset.bookId));
+            localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+            draggedElement = null;
+        }
+    });
 }
 function createNotePopup() {
     notePopup = document.createElement("div");
@@ -427,7 +472,6 @@ auth.onAuthStateChanged(user => {
     loadLocalData();
     renderAll();
 });
-
 // Load local data
 function loadLocalData() {
     const savedBooks = localStorage.getItem(STORAGE_KEY);
@@ -462,16 +506,17 @@ function loadLocalData() {
     minAuthorBooksInput.value = minAuthorBooks;
     showCoversInTimeline = JSON.parse(localStorage.getItem(SHOW_COVERS_TIMELINE_KEY) || "false");
     document.getElementById("showCoversTimeline").checked = showCoversInTimeline;
+    showYearGoalProgress = JSON.parse(localStorage.getItem(SHOW_YEAR_GOAL_PROGRESS_KEY) || "true");
+    document.getElementById("showYearGoalProgress").checked = showYearGoalProgress;
     document.getElementById("profileNick").value = profile.nick || "";
     document.getElementById("profileBio").value = profile.bio || "";
     if (profile.picture) document.getElementById("profilePic").src = profile.picture;
     loadGoalsForYear();
-	updateCoversCount();
+    updateCoversCount();
 }
 function saveBooksToLocal() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
 }
-
 // Shelf filter population
 function populateShelfFilter() {
     const select = document.getElementById("shelfFilter");
@@ -491,8 +536,7 @@ function populateShelfFilter() {
         select.value = "all";
     }
 }
-
-// Cloud save (main data – now includes minAuthorBooks)
+// Cloud save
 document.getElementById("saveCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite cloud data with current local data?")) return;
@@ -501,18 +545,18 @@ document.getElementById("saveCloudBtn").addEventListener("click", () => {
         profile: profile,
         goals: goals,
         shelfColors: shelfColors,
-        settings: { 
+        settings: {
             showNumbers: document.getElementById("showNumbers").checked,
             minAuthorBooks: minAuthorBooks,
-			showCoversTimeline: showCoversInTimeline
+            showCoversTimeline: showCoversInTimeline,
+            showYearGoalProgress: showYearGoalProgress
         }
     };
     userRef.set(dataToSave)
         .then(() => alert("Saved to cloud successfully!"))
         .catch(err => alert("Save failed: " + err.message));
 });
-
-// Cloud load (main data – now loads minAuthorBooks)
+// Cloud load
 document.getElementById("loadCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite local data with cloud data? This cannot be undone.")) return;
@@ -552,9 +596,12 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
             minAuthorBooks = settings.minAuthorBooks ?? 2;
             minAuthorBooksInput.value = minAuthorBooks;
             localStorage.setItem(MIN_AUTHOR_BOOKS_KEY, minAuthorBooks);
-			showCoversInTimeline = settings.showCoversTimeline ?? false;
-			document.getElementById("showCoversTimeline").checked = showCoversInTimeline;
+            showCoversInTimeline = settings.showCoversTimeline ?? false;
+            document.getElementById("showCoversTimeline").checked = showCoversInTimeline;
             localStorage.setItem(SHOW_COVERS_TIMELINE_KEY, JSON.stringify(showCoversInTimeline));
+            showYearGoalProgress = settings.showYearGoalProgress ?? true;
+            document.getElementById("showYearGoalProgress").checked = showYearGoalProgress;
+            localStorage.setItem(SHOW_YEAR_GOAL_PROGRESS_KEY, JSON.stringify(showYearGoalProgress));
             document.getElementById("profileNick").value = profile.nick || "";
             document.getElementById("profileBio").value = profile.bio || "";
             if (profile.picture) document.getElementById("profilePic").src = profile.picture;
@@ -568,8 +615,7 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
         })
         .catch(err => alert("Load failed: " + err.message));
 });
-
-// Cover cloud operations
+// Cover cloud operations (unchanged)
 document.getElementById("saveCoversCloud").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Save covers to cloud (separate from main data)?")) return;
@@ -610,8 +656,7 @@ document.getElementById("deleteCoversCloud").addEventListener("click", () => {
         .then(() => alert("Covers deleted from cloud!"))
         .catch(err => alert("Delete failed: " + err.message));
 });
-
-// Batch fetch covers
+// Batch fetch covers (unchanged)
 document.getElementById("fetchAllCovers").addEventListener("click", async () => {
     const missing = books.filter(b => !b.coverUrl && b.title);
     if (missing.length === 0) return alert("No books are missing covers.");
@@ -629,8 +674,7 @@ document.getElementById("fetchAllCovers").addEventListener("click", async () => 
     }
     alert(`Done! Found covers for ${found} book(s).`);
 });
-
-// Clear local covers
+// Clear local covers (unchanged)
 document.getElementById("clearLocalCovers").addEventListener("click", () => {
     if (!confirm("Remove ALL cover URLs from local data? This is irreversible locally.")) return;
     books.forEach(b => b.coverUrl = null);
@@ -638,13 +682,46 @@ document.getElementById("clearLocalCovers").addEventListener("click", () => {
     renderAll();
     alert("All local covers cleared.");
 });
-
 // New: covers counter
 function updateCoversCount() {
     const count = books.filter(b => b.coverUrl).length;
     const total = books.length;
-    document.getElementById("coversCount").textContent = 
+    document.getElementById("coversCount").textContent =
         `${count} of ${total} books have covers (remote URLs – no disk space used by the app)`;
+}
+// renderYearGoalProgress function (new)
+function renderYearGoalProgress() {
+    const container = document.getElementById("yearGoalProgressContainer");
+    container.innerHTML = "";
+    if (!showYearGoalProgress) return;
+
+    const currentYear = new Date().getFullYear();
+    const perYear = calculatePerYear();
+    const stats = perYear[currentYear] || { books: 0, pages: 0 };
+    const goal = goals[currentYear] || {};
+
+    if (!goal.books && !goal.pages) {
+        container.innerHTML = `<div style="background:#1a1a1a;padding:12px;border:1px solid #333;border-radius:8px;"><p>No goals set for ${currentYear}.</p></div>`;
+        return;
+    }
+
+    let html = `<div style="background:#1a1a1a;padding:16px;border:1px solid #333;border-radius:8px;"><h3>${currentYear} Goal Progress</h3>`;
+    if (goal.books) {
+        const percent = goal.books ? Math.min(100, Math.round(stats.books / goal.books * 100)) : 0;
+        html += `<p>Books: ${stats.books} / ${goal.books} (${percent}%)</p>`;
+        html += `<div style="background:#333;height:20px;border-radius:10px;overflow:hidden;margin-bottom:12px;">
+                    <div style="background:#4caf50;width:${percent}%;height:100%;transition:width 0.4s;"></div>
+                 </div>`;
+    }
+    if (goal.pages) {
+        const percent = goal.pages ? Math.min(100, Math.round(stats.pages / goal.pages * 100)) : 0;
+        html += `<p>Pages: ${stats.pages} / ${goal.pages} (${percent}%)</p>`;
+        html += `<div style="background:#333;height:20px;border-radius:10px;overflow:hidden;">
+                    <div style="background:#2196f3;width:${percent}%;height:100%;transition:width 0.4s;"></div>
+                 </div>`;
+    }
+    html += `</div>`;
+    container.innerHTML = html;
 }
 
 // Tab switching
@@ -660,6 +737,7 @@ function switchTab(name) {
         renderFavourites();
     }
     if (name === "timeline") renderTimeline();
+    if (name === "list") renderYearGoalProgress();
 }
 function renderAll() {
     populateShelfFilter();
@@ -669,16 +747,18 @@ function renderAll() {
     renderRecentBooks();
     renderFavourites();
     renderTimeline();
-	updateCoversCount();
+    renderYearGoalProgress();
+    updateCoversCount();
     if (document.querySelector('.tab.active')?.dataset.tab === "options") renderShelfManager();
 }
-
 // Modal
 function openEditModal(book = null) {
     editingBook = book;
     document.getElementById("editTitle").value = book?.title || "";
     document.getElementById("editAuthor").value = book?.author || "";
     document.getElementById("editSeries").value = book?.series || "";
+    document.getElementById("editSeriesNumber").value = book?.seriesNumber ?? "";
+    document.getElementById("editLanguage").value = book?.language || "";
     document.getElementById("editShelves").value = (book?.shelves || []).join(", ");
     document.getElementById("editExclusiveShelf").value = book?.exclusiveShelf || "to-read";
     document.getElementById("editPages").value = book?.pages || "";
@@ -731,8 +811,7 @@ document.getElementById("fetchCoverBtn").addEventListener("click", async () => {
         alert("No cover found for this book.");
     }
 });
-
-// Sorting
+// Sorting (unchanged)
 function compare(a, b, col) {
     let av = a[col];
     let bv = b[col];
@@ -777,8 +856,7 @@ function updateSortIndicators() {
         document.getElementById("recentSortIndicator").textContent = sortState.direction > 0 ? "▼" : "▲";
     }
 }
-
-// Search
+// Enhanced search
 function filterBooksByQuery(list, query) {
     const terms = query.toLowerCase().match(/\S+/g) || [];
     return list.filter(book => {
@@ -815,7 +893,7 @@ function filterBooksByQuery(list, query) {
                 else if (op === "<=") match = match && val <= num;
                 else if (op === "=" || op === "==") match = match && val === num;
                 else if (op === "!=") match = match && val !== num;
-			} else if ((m = term.match(/^cover(=|:) *(true|1|false|0)$/i))) {
+            } else if ((m = term.match(/^cover(=|:) *(true|1|false|0)$/i))) {
                 const wantCover = m[2] === "true" || m[2] === "1";
                 const hasCover = !!book.coverUrl;
                 match = match && (hasCover === wantCover);
@@ -841,6 +919,45 @@ function filterBooksByQuery(list, query) {
                 else if (op === "<=") match = match && firstYear <= num;
                 else if (op === "=") match = match && firstYear === num;
                 else if (op === "!=") match = match && firstYear !== num;
+            } else if ((m = term.match(/^lang(uage)?:?(.*)$/i))) {
+                const val = m[2];
+                if (val === "" || val === "none") {
+                    match = match && !book.language;
+                } else {
+                    const lc = (book.language || "").toLowerCase();
+                    match = match && lc.includes(val.toLowerCase());
+                }
+            } else if ((m = term.match(/^(date)?(added|started|datestarted|dateadded)([<>=!]*)(.*)$/i))) {
+                const field = m[2].toLowerCase().includes("started") ? "dateStarted" : "dateAdded";
+                let op = m[3] || "=";
+                if (op === "==") op = "=";
+                let val = m[4].trim();
+                const bookTs = book[field] || null;
+                if (val === "none" || val === "") {
+                    match = match && (bookTs == null);
+                    continue;
+                }
+                if (val.match(/^\d{4}$/)) {
+                    const year = Number(val);
+                    if (bookTs == null) { match = false; continue; }
+                    const bookYear = new Date(bookTs).getFullYear();
+                    if (op === "=") match = match && bookYear === year;
+                    else if (op === ">") match = match && bookYear > year;
+                    else if (op === ">=") match = match && bookYear >= year;
+                    else if (op === "<") match = match && bookYear < year;
+                    else if (op === "<=") match = match && bookYear <= year;
+                    else if (op === "!=") match = match && bookYear !== year;
+                } else {
+                    const targetTs = Date.parse(val);
+                    if (isNaN(targetTs)) { match = false; continue; }
+                    if (bookTs == null) { match = false; continue; }
+                    if (op === ">") match = match && bookTs > targetTs;
+                    else if (op === ">=") match = match && bookTs >= targetTs;
+                    else if (op === "<") match = match && bookTs < targetTs;
+                    else if (op === "<=") match = match && bookTs <= targetTs;
+                    else if (op === "=") match = match && bookTs === targetTs;
+                    else if (op === "!=") match = match && bookTs !== targetTs;
+                }
             } else {
                 const text = `${book.title} ${book.author} ${book.series || ""} ${book.notes || ""}`.toLowerCase();
                 match = match && text.includes(term);
@@ -850,7 +967,6 @@ function filterBooksByQuery(list, query) {
         return match;
     });
 }
-
 function calculatePerYear() {
     const perYear = {};
     books.forEach(b => {
@@ -866,8 +982,7 @@ function calculatePerYear() {
     });
     return perYear;
 }
-
-// Table rendering
+// Table rendering (unchanged)
 function renderTable() {
     const showNumbers = document.getElementById("showNumbers").checked;
     const filter = document.getElementById("shelfFilter").value;
@@ -912,8 +1027,7 @@ function renderTable() {
         }
     });
 }
-
-// Timeline
+// Timeline (unchanged)
 function renderTimeline() {
     const container = document.getElementById("timelineContainer");
     container.innerHTML = "";
@@ -973,8 +1087,7 @@ function renderTimeline() {
         container.appendChild(div);
     });
 }
-
-// Stats
+// Stats (unchanged except goal display uses current year)
 function renderStats() {
     const container = document.getElementById("stats");
     const ctx = document.getElementById("statsChart").getContext("2d");
@@ -1049,9 +1162,14 @@ function renderStats() {
     html += '</div></div>';
     html += '</div>';
     html += '<div class="stats-year-block"><h2>By Year</h2><div class="stats-list">';
-    if (Object.keys(perYear).length === 0) html += "none";
-    else Object.keys(perYear).sort((a,b)=>b-a).forEach(y => html += `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages<br>`);
-    html += '</div></div>';
+if (Object.keys(perYear).length === 0) {
+    html += "none";
+} else {
+    Object.keys(perYear).sort((a, b) => b - a).forEach(y => {
+        html += `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages<br>`;
+    });
+}
+html += '</div></div>';
     container.innerHTML = html;
     const labels = Object.keys(perYear).sort((a,b) => a - b);
     if (labels.length === 0) return;
@@ -1264,6 +1382,8 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         rating: Number(document.getElementById("editRating").value) || 0,
         notes: document.getElementById("editNotes").value.trim(),
         coverUrl: document.getElementById("editCoverUrl").value.trim() || null
+		data.seriesNumber = document.getElementById("editSeriesNumber").value ? Number(document.getElementById("editSeriesNumber").value) : null;
+		data.language = document.getElementById("editLanguage").value.trim() || null;
     };
     const bumpNow = document.getElementById("editBumpRecent").checked;
     if (editingBook) {
@@ -1424,6 +1544,11 @@ document.getElementById("removeBook").addEventListener("click", () => {
     renderAll();
     closeEditModal();
 });
+document.getElementById("showYearGoalProgress").addEventListener("change", e => {
+    showYearGoalProgress = e.target.checked;
+    localStorage.setItem(SHOW_YEAR_GOAL_PROGRESS_KEY, JSON.stringify(showYearGoalProgress));
+    renderYearGoalProgress();
+});
 document.getElementById("closeEdit").addEventListener("click", closeEditModal);
 document.getElementById("editModal").addEventListener("click", e => {
     if (e.target === document.getElementById("editModal")) closeEditModal();
@@ -1437,7 +1562,12 @@ document.getElementById("filterInfo").addEventListener("click", () => {
 • count>1 (rereads)
 • date=2024 (first read year)
 • cover=true/false or cover=1/0
+• lang:english, language:jap, lang:none
+• added:2024, added>2023-06-01, added:none
+• started:2025, started<2024, started:none
+Also accepts dateadded: and datestarted:
 Combine with spaces (AND).`);
+
 });
 
 // Import helpers
@@ -1520,4 +1650,3 @@ loadGoalsForYear();
 </script>
 </body>
 </html>
-
