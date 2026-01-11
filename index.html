@@ -184,7 +184,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.6 – series numbering, language, goal progress bar, enhanced search, mobile favourite dragging
+    Version 1.6.1 – shelf filter preserved on edit, added country & genre fields with search
 </section>
 <!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
@@ -195,6 +195,8 @@ button.danger:hover { background-color: #a83838; }
         <label>Series: <input type="text" id="editSeries" style="width:100%;"></label><br>
         <label>Series volume/number: <input type="number" id="editSeriesNumber" step="0.1" placeholder="e.g. 3 or 2.5" style="width:140px;"></label><br>
         <label>Language: <input type="text" id="editLanguage" placeholder="e.g. English, Japanese" style="width:100%;"></label><br>
+        <label>Country: <input type="text" id="editCountry" placeholder="e.g. Japan, USA" style="width:100%;"></label><br>
+        <label>Genre: <input type="text" id="editGenre" placeholder="e.g. Fantasy, Mystery" style="width:100%;"></label><br>
         <label>Shelves (comma separated): <input type="text" id="editShelves" style="width:100%;"></label><br>
         <label>Status:
             <select id="editExclusiveShelf" style="width:100%;">
@@ -272,7 +274,6 @@ let minAuthorBooks = 2;
 let showCoversInTimeline = false;
 let showYearGoalProgress = true;
 let notePopup = null;
-
 // Helpers
 function getLatestReadTimestamp(book) {
     if (!book.dateRead || book.exclusiveShelf !== "read") return 0;
@@ -444,7 +445,6 @@ function moveNotePopup(e) {
     notePopup.style.left = (e.clientX + 15) + "px";
     notePopup.style.top = (e.clientY + 20) + "px";
 }
-
 // Auth listener
 auth.onAuthStateChanged(user => {
     currentUser = user;
@@ -517,9 +517,10 @@ function loadLocalData() {
 function saveBooksToLocal() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
 }
-// Shelf filter population
+// Shelf filter population – now preserves current selection
 function populateShelfFilter() {
     const select = document.getElementById("shelfFilter");
+    const currentValue = select.value;
     select.innerHTML = '<option value="all">all</option>';
     const set = new Set();
     books.forEach(b => {
@@ -532,7 +533,10 @@ function populateShelfFilter() {
         opt.textContent = s;
         select.appendChild(opt);
     });
-    if (select.value !== "all" && ![...set].includes(select.value)) {
+    // Restore previous selection if still valid
+    if (currentValue && currentValue !== "all" && [...set].includes(currentValue)) {
+        select.value = currentValue;
+    } else {
         select.value = "all";
     }
 }
@@ -759,6 +763,8 @@ function openEditModal(book = null) {
     document.getElementById("editSeries").value = book?.series || "";
     document.getElementById("editSeriesNumber").value = book?.seriesNumber ?? "";
     document.getElementById("editLanguage").value = book?.language || "";
+    document.getElementById("editCountry").value = book?.country || "";
+    document.getElementById("editGenre").value = book?.genre || "";
     document.getElementById("editShelves").value = (book?.shelves || []).join(", ");
     document.getElementById("editExclusiveShelf").value = book?.exclusiveShelf || "to-read";
     document.getElementById("editPages").value = book?.pages || "";
@@ -856,7 +862,7 @@ function updateSortIndicators() {
         document.getElementById("recentSortIndicator").textContent = sortState.direction > 0 ? "▼" : "▲";
     }
 }
-// Enhanced search
+// Search
 function filterBooksByQuery(list, query) {
     const terms = query.toLowerCase().match(/\S+/g) || [];
     return list.filter(book => {
@@ -925,6 +931,22 @@ function filterBooksByQuery(list, query) {
                     match = match && !book.language;
                 } else {
                     const lc = (book.language || "").toLowerCase();
+                    match = match && lc.includes(val.toLowerCase());
+                }
+            } else if ((m = term.match(/^country?:?(.*)$/i))) {
+                const val = m[1];
+                if (val === "" || val === "none") {
+                    match = match && !book.country;
+                } else {
+                    const lc = (book.country || "").toLowerCase();
+                    match = match && lc.includes(val.toLowerCase());
+                }
+            } else if ((m = term.match(/^genre?:?(.*)$/i))) {
+                const val = m[1];
+                if (val === "" || val === "none") {
+                    match = match && !book.genre;
+                } else {
+                    const lc = (book.genre || "").toLowerCase();
                     match = match && lc.includes(val.toLowerCase());
                 }
             } else if ((m = term.match(/^(date)?(added|started|datestarted|dateadded)([<>=!]*)(.*)$/i))) {
@@ -1366,7 +1388,7 @@ document.getElementById("showCoversTimeline").addEventListener("change", e => {
     renderTimeline();
 });
 
-// Save edit (full original logic + coverUrl)
+// Save edit
 document.getElementById("saveEdit").addEventListener("click", () => {
     const now = Date.now();
     const data = {
@@ -1375,6 +1397,8 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         series: document.getElementById("editSeries").value.trim(),
         seriesNumber: document.getElementById("editSeriesNumber").value ? Number(document.getElementById("editSeriesNumber").value) : null,
         language: document.getElementById("editLanguage").value.trim() || null,
+        country: document.getElementById("editCountry").value.trim() || null,
+        genre: document.getElementById("editGenre").value.trim() || null,
         shelves: document.getElementById("editShelves").value.split(",").map(s => s.trim()).filter(Boolean),
         exclusiveShelf: document.getElementById("editExclusiveShelf").value,
         pages: Number(document.getElementById("editPages").value) || 0,
@@ -1384,7 +1408,7 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         rating: Number(document.getElementById("editRating").value) || 0,
         notes: document.getElementById("editNotes").value.trim(),
         coverUrl: document.getElementById("editCoverUrl").value.trim() || null
-    };
+     };
     const bumpNow = document.getElementById("editBumpRecent").checked;
     if (editingBook) {
         Object.assign(editingBook, data);
@@ -1443,116 +1467,7 @@ document.getElementById("saveEdit").addEventListener("click", () => {
     renderAll();
     closeEditModal();
 });
-
-// Event listeners
-document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
-document.getElementById("addBook").addEventListener("click", () => openEditModal());
-document.getElementById("searchInput").addEventListener("input", renderTable);
-document.getElementById("shelfFilter").addEventListener("change", renderTable);
-document.querySelectorAll("th[data-col]").forEach(th => th.addEventListener("click", () => handleSort(th.dataset.col)));
-document.getElementById("sortRecent").addEventListener("click", () => {
-    if (sortState.column === null) {
-        sortState.direction *= -1;
-    } else {
-        sortState.column = null;
-        sortState.direction = 1;
-    }
-    updateSortIndicators();
-    renderTable();
-});
-document.getElementById("fileInput").addEventListener("change", e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-        if (file.name.endsWith(".json")) importJSON(ev.target.result);
-        else parseCSV(ev.target.result);
-    };
-    reader.readAsText(file);
-});
-document.getElementById("exportData").addEventListener("click", () => {
-    const data = { books };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "reading-list-export.json";
-    a.click();
-    URL.revokeObjectURL(url);
-});
-document.getElementById("clearStorage").addEventListener("click", () => {
-    if (confirm("Clear all local data? (Cloud data stays if signed in)")) {
-        localStorage.clear();
-        books = [];
-        profile = { favourites: [], favouriteSeries: [] };
-        goals = {};
-        shelfColors = {};
-        loadLocalData();
-        renderAll();
-    }
-});
-document.getElementById("signInBtn").addEventListener("click", () => {
-    const email = document.getElementById("authEmail").value.trim();
-    const pass = document.getElementById("authPassword").value;
-    if (!email || !pass) return alert("Enter email and password");
-    auth.signInWithEmailAndPassword(email, pass).catch(err => alert("Sign in error: " + err.message));
-});
-document.getElementById("signUpBtn").addEventListener("click", () => {
-    const email = document.getElementById("authEmail").value.trim();
-    const pass = document.getElementById("authPassword").value;
-    if (!email || !pass) return alert("Enter email and password");
-    auth.createUserWithEmailAndPassword(email, pass).catch(err => alert("Sign up error: " + err.message));
-});
-document.getElementById("signOutBtn").addEventListener("click", () => auth.signOut());
-document.getElementById("showNumbers").addEventListener("change", () => {
-    localStorage.setItem(SHOW_NUM_KEY, document.getElementById("showNumbers").checked);
-    renderTable();
-});
-document.getElementById("profilePic").addEventListener("click", () => document.getElementById("profilePicInput").click());
-document.getElementById("profilePicInput").addEventListener("change", e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-        profile.picture = ev.target.result;
-        document.getElementById("profilePic").src = profile.picture;
-        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-    };
-    reader.readAsDataURL(file);
-});
-let profileSaveTimeout;
-document.getElementById("profileNick").addEventListener("input", () => {
-    clearTimeout(profileSaveTimeout);
-    profileSaveTimeout = setTimeout(() => {
-        profile.nick = document.getElementById("profileNick").value.trim();
-        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-    }, 800);
-});
-document.getElementById("profileBio").addEventListener("input", () => {
-    clearTimeout(profileSaveTimeout);
-    profileSaveTimeout = setTimeout(() => {
-        profile.bio = document.getElementById("profileBio").value.trim();
-        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-    }, 800);
-});
-document.getElementById("removeBook").addEventListener("click", () => {
-    if (!editingBook || !confirm("Really remove this book?")) return;
-    profile.favourites = profile.favourites.filter(id => id !== editingBook.importOrder);
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-    books = books.filter(b => b !== editingBook);
-    saveBooksToLocal();
-    renderAll();
-    closeEditModal();
-});
-document.getElementById("showYearGoalProgress").addEventListener("change", e => {
-    showYearGoalProgress = e.target.checked;
-    localStorage.setItem(SHOW_YEAR_GOAL_PROGRESS_KEY, JSON.stringify(showYearGoalProgress));
-    renderYearGoalProgress();
-});
-document.getElementById("closeEdit").addEventListener("click", closeEditModal);
-document.getElementById("editModal").addEventListener("click", e => {
-    if (e.target === document.getElementById("editModal")) closeEditModal();
-});
+// Updated filter help
 document.getElementById("filterInfo").addEventListener("click", () => {
     alert(`Search syntax:
 • Normal words → title / author / series / notes
@@ -1563,13 +1478,13 @@ document.getElementById("filterInfo").addEventListener("click", () => {
 • date=2024 (first read year)
 • cover=true/false or cover=1/0
 • lang:english, language:jap, lang:none
+• country:japan, country:usa, country:none
+• genre:fantasy, genre:mystery, genre:none
 • added:2024, added>2023-06-01, added:none
 • started:2025, started<2024, started:none
 Also accepts dateadded: and datestarted:
 Combine with spaces (AND).`);
-
 });
-
 // Import helpers
 function parseCSVLine(line) {
     const result = [];
@@ -1650,4 +1565,3 @@ loadGoalsForYear();
 </script>
 </body>
 </html>
-
