@@ -49,7 +49,6 @@ button.danger:hover { background-color: #a83838; }
 #filterInfo { cursor: help; color: #888; }
 #cloudButtons, #coverCloudButtons { margin-top: 12px; }
 .profile-recent-section h4 { margin: 16px 0 8px 0; font-size:1em; }
-/* New styles for edit modal */
 .edit-section { background: #1a1a1a; padding: 12px; margin-bottom: 12px; border-radius: 6px; border: 1px solid #333; }
 .edit-section h4 { margin: 0 0 10px 0; font-size: 1em; cursor: pointer; user-select: none; }
 .edit-section.collapsed .edit-section-content { display: none; }
@@ -187,13 +186,12 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.7 – tags, reading speeds, multi-read support, cleaner edit modal, Challenges tab
+    Version 1.7.1 – fixed modal save/close, last read date, recent sort, and other bugs
 </section>
 
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
     <div style="background:#222; padding:20px; border:1px solid #444; max-width:600px; width:100%; max-height:90vh; overflow-y:auto;">
         <h3>Edit Book</h3>
-
         <div class="edit-section">
             <h4 onclick="this.parentElement.classList.toggle('collapsed')">Basic Info ▼</h4>
             <div class="edit-section-content">
@@ -208,7 +206,6 @@ button.danger:hover { background-color: #a83838; }
                 <label id="favSeriesLabel">Favourite series: <input type="checkbox" id="editFavouriteSeries"></label><br>
             </div>
         </div>
-
         <div class="edit-section">
             <h4 onclick="this.parentElement.classList.toggle('collapsed')">Metadata ▼</h4>
             <div class="edit-section-content">
@@ -227,7 +224,6 @@ button.danger:hover { background-color: #a83838; }
                 </label><br>
             </div>
         </div>
-
         <div class="edit-section">
             <h4 onclick="this.parentElement.classList.toggle('collapsed')">Reads / Re-reads ▼</h4>
             <div class="edit-section-content">
@@ -239,7 +235,6 @@ button.danger:hover { background-color: #a83838; }
                 </p>
             </div>
         </div>
-
         <div class="edit-section">
             <h4 onclick="this.parentElement.classList.toggle('collapsed')">Cover & Notes ▼</h4>
             <div class="edit-section-content">
@@ -249,7 +244,6 @@ button.danger:hover { background-color: #a83838; }
                 <textarea id="editNotes" placeholder="Notes" style="width:100%; height:100px; resize:vertical; margin-top:12px;"></textarea>
             </div>
         </div>
-
         <div class="modal-footer">
             <button id="removeBook" class="danger">Remove</button>
             <div class="modal-actions-right">
@@ -283,7 +277,7 @@ const cloudButtons = document.getElementById("cloudButtons");
 const coverCloudButtons = document.getElementById("coverCloudButtons");
 const minAuthorBooksInput = document.getElementById("minAuthorBooks");
 
-// Global state & constants
+// Global state
 let currentUser = null;
 let userRef = null;
 let editingBook = null;
@@ -308,7 +302,7 @@ let showCoversInTimeline = false;
 let showYearGoalProgress = true;
 let notePopup = null;
 
-// New helpers for reads and activity
+// Helpers
 function getReadCount(book) {
     return book.reads ? book.reads.filter(r => r.finished !== null).length : 0;
 }
@@ -328,10 +322,11 @@ function getCurrentReadStart(book) {
 function getActivityTimestamp(book) {
     const latestFinished = getLatestFinished(book);
     const currentStart = getCurrentReadStart(book);
-    return Math.max(latestFinished, currentStart);
+    const added = book.dateAdded || 0;
+    const bump = book.bumpTime || 0;
+    return Math.max(latestFinished, currentStart, added, bump);
 }
 
-// Reading speed calculation
 function calculateReadingSpeeds() {
     const validReads = [];
     books.forEach(book => {
@@ -363,7 +358,6 @@ function calculateReadingSpeeds() {
     return { avg, fastest, slowest };
 }
 
-// Cover fetch (unchanged)
 async function fetchCover(book) {
     let query = "";
     if (book.isbn) {
@@ -392,7 +386,6 @@ async function fetchCover(book) {
     }
 }
 
-// Card creation functions (unchanged)
 function createBookCard(book) {
     const div = document.createElement("div");
     div.className = "book-card";
@@ -433,7 +426,6 @@ function createSeriesCard(series) {
     return div;
 }
 
-// Draggable favourites (unchanged)
 function makeFavouritesDraggable(container) {
     container.addEventListener("dragstart", e => {
         const card = e.target.closest(".book-card");
@@ -499,7 +491,6 @@ function makeFavouritesDraggable(container) {
     });
 }
 
-// Note popup (unchanged)
 function createNotePopup() {
     notePopup = document.createElement("div");
     notePopup.style.position = "absolute";
@@ -514,22 +505,24 @@ function createNotePopup() {
     notePopup.style.pointerEvents = "none";
     document.body.appendChild(notePopup);
 }
+
 function showNotePopup(popup, text) {
     popup.textContent = text;
     popup.style.display = "block";
     document.addEventListener("mousemove", moveNotePopup);
 }
+
 function hideNotePopup(popup) {
     popup.style.display = "none";
     document.removeEventListener("mousemove", moveNotePopup);
 }
+
 function moveNotePopup(e) {
     if (!notePopup) return;
     notePopup.style.left = (e.clientX + 15) + "px";
     notePopup.style.top = (e.clientY + 20) + "px";
 }
 
-// Auth listener (unchanged)
 auth.onAuthStateChanged(user => {
     currentUser = user;
     const syncStatus = document.getElementById("syncStatus");
@@ -557,7 +550,6 @@ auth.onAuthStateChanged(user => {
     renderAll();
 });
 
-// Load local data with migration to new format
 function loadLocalData() {
     const savedBooks = localStorage.getItem(STORAGE_KEY);
     if (savedBooks) {
@@ -569,8 +561,6 @@ function loadLocalData() {
     books.forEach(b => {
         if (!b.importOrder) b.importOrder = nextImportOrder++;
         maxOrder = Math.max(maxOrder, b.importOrder ?? 0);
-
-        // Migration from old format
         if (!Array.isArray(b.reads)) {
             b.reads = [];
             if (b.dateRead) {
@@ -593,8 +583,6 @@ function loadLocalData() {
             delete b.readCount;
             delete b.lastFinished;
         }
-
-        // Ensure tags exist
         if (!Array.isArray(b.tags)) b.tags = [];
     });
     nextImportOrder = maxOrder + 1;
@@ -627,7 +615,6 @@ function saveBooksToLocal() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
 }
 
-// Shelf filter (unchanged)
 function populateShelfFilter() {
     const select = document.getElementById("shelfFilter");
     const currentValue = select.value;
@@ -650,7 +637,6 @@ function populateShelfFilter() {
     }
 }
 
-// Cloud operations (unchanged except full code)
 document.getElementById("saveCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite cloud data with current local data?")) return;
@@ -678,10 +664,26 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
         .then(snap => {
             const data = snap.val();
             if (!data) return alert("No data in cloud");
-            let loadedBooks = data.books || [];
-            if (!Array.isArray(loadedBooks)) loadedBooks = Object.values(loadedBooks);
-            books = loadedBooks;
-            loadLocalData(); // re-run migration and setup
+            books = data.books || [];
+            profile = data.profile || { favourites: [], favouriteSeries: [] };
+            goals = data.goals || {};
+            shelfColors = data.shelfColors || {};
+            const settings = data.settings || {};
+            document.getElementById("showNumbers").checked = settings.showNumbers ?? true;
+            localStorage.setItem(SHOW_NUM_KEY, settings.showNumbers ?? true);
+            minAuthorBooks = settings.minAuthorBooks ?? 2;
+            minAuthorBooksInput.value = minAuthorBooks;
+            localStorage.setItem(MIN_AUTHOR_BOOKS_KEY, minAuthorBooks);
+            showCoversInTimeline = settings.showCoversTimeline ?? false;
+            document.getElementById("showCoversTimeline").checked = showCoversInTimeline;
+            localStorage.setItem(SHOW_COVERS_TIMELINE_KEY, JSON.stringify(showCoversInTimeline));
+            showYearGoalProgress = settings.showYearGoalProgress ?? true;
+            document.getElementById("showYearGoalProgress").checked = showYearGoalProgress;
+            localStorage.setItem(SHOW_YEAR_GOAL_PROGRESS_KEY, JSON.stringify(showYearGoalProgress));
+            document.getElementById("profileNick").value = profile.nick || "";
+            document.getElementById("profileBio").value = profile.bio || "";
+            if (profile.picture) document.getElementById("profilePic").src = profile.picture;
+            loadLocalData(); // re-apply migration if needed
             saveBooksToLocal();
             localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
             localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
@@ -692,7 +694,6 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
         .catch(err => alert("Load failed: " + err.message));
 });
 
-// Covers operations (unchanged, full code)
 document.getElementById("saveCoversCloud").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Save covers to cloud (separate from main data)?")) return;
@@ -769,7 +770,6 @@ function updateCoversCount() {
         `${count} of ${total} books have covers (remote URLs – no disk space used by the app)`;
 }
 
-// Year goal progress (unchanged)
 function renderYearGoalProgress() {
     const container = document.getElementById("yearGoalProgressContainer");
     container.innerHTML = "";
@@ -801,7 +801,6 @@ function renderYearGoalProgress() {
     container.innerHTML = html;
 }
 
-// Tab switching
 function switchTab(name) {
     document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
     document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === "tab-" + name));
@@ -832,7 +831,6 @@ function renderAll() {
     if (document.querySelector('.tab.active')?.dataset.tab === "options") renderShelfManager();
 }
 
-// Fixed openEditModal – no recreation on status change
 function openEditModal(book = null) {
     editingBook = book || { reads: [], tags: [], exclusiveShelf: "to-read" };
 
@@ -846,7 +844,7 @@ function openEditModal(book = null) {
     document.getElementById("editTags").value = (book?.tags || []).join(", ");
     document.getElementById("editShelves").value = (book?.shelves || []).join(", ");
     document.getElementById("editExclusiveShelf").value = editingBook.exclusiveShelf || "to-read";
-document.getElementById("editPages").value = book?.pages || "";
+    document.getElementById("editPages").value = book?.pages || "";
     document.getElementById("editYear").value = book?.year || "";
     document.getElementById("editRating").value = book?.rating || 0;
     document.getElementById("editNotes").value = book?.notes || "";
@@ -870,7 +868,6 @@ document.getElementById("editPages").value = book?.pages || "";
         document.getElementById("favSeriesLabel").style.display = "none";
     }
 
-    // Build reads list
     const readsList = document.getElementById("readsList");
     readsList.innerHTML = "";
     const reads = editingBook.reads;
@@ -889,21 +886,23 @@ document.getElementById("editPages").value = book?.pages || "";
                 reads.splice(idx, 1);
                 rebuildReadsList();
             };
-            div.querySelector(".readStart").onchange = () => read.started = div.querySelector(".readStart").value ? new Date(div.querySelector(".readStart").value).getTime() : null;
-            div.querySelector(".readFinish").onchange = () => read.finished = div.querySelector(".readFinish").value ? new Date(div.querySelector(".readFinish").value).getTime() : null;
+            div.querySelector(".readStart").onchange = e => {
+                read.started = e.target.value ? new Date(e.target.value).getTime() : null;
+            };
+            div.querySelector(".readFinish").onchange = e => {
+                read.finished = e.target.value ? new Date(e.target.value).getTime() : null;
+            };
             readsList.appendChild(div);
         });
     }
 
     rebuildReadsList();
 
-    // Add read button
     document.getElementById("addReadBtn").onclick = () => {
         reads.push({ started: Date.now(), finished: null });
         rebuildReadsList();
     };
 
-    // Status change – update reads list without recreating modal
     document.getElementById("editExclusiveShelf").onchange = () => {
         const status = document.getElementById("editExclusiveShelf").value;
         editingBook.exclusiveShelf = status;
@@ -912,7 +911,6 @@ document.getElementById("editPages").value = book?.pages || "";
                 reads.push({ started: Date.now(), finished: null });
             }
         } else if (status !== "read") {
-            // Remove any open read
             reads = reads.filter(r => r.finished !== null);
         }
         rebuildReadsList();
@@ -921,7 +919,11 @@ document.getElementById("editPages").value = book?.pages || "";
     document.getElementById("editModal").style.display = "flex";
 }
 
-// Fixed saveEdit – properly handles new books
+function closeEditModal() {
+    editingBook = null;
+    document.getElementById("editModal").style.display = "none";
+}
+
 document.getElementById("saveEdit").addEventListener("click", () => {
     const now = Date.now();
 
@@ -941,10 +943,9 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         rating: Number(document.getElementById("editRating").value) || 0,
         notes: document.getElementById("editNotes").value.trim(),
         coverUrl: document.getElementById("editCoverUrl").value.trim() || null,
-        reads: editingBook.reads.map(r => ({ started: r.started, finished: r.finished })) // copy
+        reads: editingBook.reads.map(r => ({ started: r.started, finished: r.finished }))
     };
 
-    // Ensure currently-reading has open read
     if (data.exclusiveShelf === "currently-reading") {
         if (data.reads.length === 0 || data.reads[data.reads.length - 1].finished !== null) {
             data.reads.push({ started: now, finished: null });
@@ -954,22 +955,19 @@ document.getElementById("saveEdit").addEventListener("click", () => {
     }
 
     let savedBook;
-    if (editingBook && editingBook.importOrder) {
-        // Existing book – update in place
+    if (editingBook.importOrder) {
         const index = books.findIndex(b => b.importOrder === editingBook.importOrder);
         if (index !== -1) {
             books[index] = { ...books[index], ...data };
             savedBook = books[index];
         }
     } else {
-        // New book
         data.importOrder = nextImportOrder++;
         data.dateAdded = now;
         books.unshift(data);
         savedBook = data;
     }
 
-    // Favourites handling (unchanged)
     const bookId = savedBook.importOrder;
     const isFav = document.getElementById("editFavourite").checked;
     if (isFav) {
@@ -989,7 +987,7 @@ document.getElementById("saveEdit").addEventListener("click", () => {
     renderAll();
     closeEditModal();
 });
-// Search with tag support
+
 function filterBooksByQuery(list, query) {
     const terms = query.toLowerCase().match(/\S+/g) || [];
     return list.filter(book => {
@@ -1073,7 +1071,6 @@ function filterBooksByQuery(list, query) {
     });
 }
 
-// Per-year calculation using reads
 function calculatePerYear() {
     const perYear = {};
     books.forEach(b => {
@@ -1091,7 +1088,6 @@ function calculatePerYear() {
     return perYear;
 }
 
-// Table rendering (updated for reads)
 function renderTable() {
     const showNumbers = document.getElementById("showNumbers").checked;
     const filter = document.getElementById("shelfFilter").value;
@@ -1114,6 +1110,8 @@ function renderTable() {
             .map(sh => `<span style="background:${shelfColors[sh] || '#888'}; padding:2px 4px; margin-right:2px; border-radius:3px;">${sh}</span>`)
             .join("");
         const coverHtml = book.coverUrl ? `<img src="${book.coverUrl}" alt="Cover" style="max-height:80px;" onerror="this.style.display='none'">` : "";
+        const lastReadTs = getLatestFinished(book);
+        const lastReadDisplay = lastReadTs > 0 ? new Date(lastReadTs).toLocaleDateString() : "-";
         tr.innerHTML = `
             <td>${showNumbers ? (idx + 1) + ". " : ""}${book.title || ""}${book.notes ? ' <span class="noteIcon" style="cursor:help;color:#888;">📝</span>' : ''}</td>
             <td>${book.rating || "-"}</td>
@@ -1122,8 +1120,7 @@ function renderTable() {
             <td>${shelvesDisplay}</td>
             <td>${book.pages || "-"}</td>
             <td>${book.year ?? "-"}</td>
-            <td>${book.reads && book.reads.length > 0 ? new Date(getLatestFinished(book)).toLocaleDateString() : "-"}</td>
-            <td>${getReadCount(book)}</td>
+            <td>${lastReadDisplay}</td>
             <td>${getReadCount(book)}</td>
             <td><button class="editBtn" style="padding:2px 6px;">✎</button></td>
         `;
@@ -1138,16 +1135,6 @@ function renderTable() {
     });
 }
 
-// Fixed recent sort – fallback to dateAdded
-function getActivityTimestamp(book) {
-    const latestFinished = getLatestFinished(book);
-    const currentStart = getCurrentReadStart(book);
-    const added = book.dateAdded || 0;
-    const bump = book.bumpTime || 0;
-    return Math.max(latestFinished, currentStart, added, bump);
-}
-
-// Timeline using all finished reads
 function renderTimeline() {
     const container = document.getElementById("timelineContainer");
     container.innerHTML = "";
@@ -1204,14 +1191,12 @@ function renderTimeline() {
     });
 }
 
-// Stats with reading speed
 function renderStats() {
     const container = document.getElementById("stats");
     const ctx = document.getElementById("statsChart").getContext("2d");
     if (window.statsChart && typeof window.statsChart.destroy === 'function') {
         window.statsChart.destroy();
     }
-    window.statsChart = null;
     const perYear = calculatePerYear();
     const readBooks = books.filter(b => b.exclusiveShelf === "read");
     const dnfBooks = books.filter(b => b.exclusiveShelf === "dnf");
@@ -1248,9 +1233,7 @@ function renderStats() {
         if (s.books > maxYearBooks) { maxYearBooks = s.books; maxYearBooksYear = y; }
         if (s.pages > maxYearPages) { maxYearPages = s.pages; maxYearPagesYear = y; }
     });
-
     const speeds = calculateReadingSpeeds();
-
     let html = '<div class="stats-upper">';
     html += '<div class="stats-block"><h2>Overall Stats</h2>';
     if (pagesGoal || booksGoal) {
@@ -1266,7 +1249,6 @@ function renderStats() {
     html += `<div>DNF</div><div>${dnfBooks.length}</div>`;
     html += `<div>Pages read (× count)</div><div>${pagesRead}</div>`;
     html += '</div></div>';
-
     html += '<div class="stats-block"><h2>Favorite Authors</h2><div class="stats-list">';
     html += '<strong>By books read:</strong><br>';
     topByCount.forEach(([a, s]) => html += `• ${a}: ${s.count} book${s.count > 1 ? 's' : ''}<br>`);
@@ -1274,7 +1256,6 @@ function renderStats() {
     if (topByAvg.length === 0) html += "No authors meet minimum<br>";
     topByAvg.forEach(([a, avg, rated]) => html += `• ${a}: ${avg} (${rated} rated)<br>`);
     html += '</div></div>';
-
     html += '<div class="stats-block"><h2>Personal Records</h2><div class="stats-list">';
     if (longest) html += `Longest book: <strong>${longest.title}</strong> (${longest.pages} pages)<br>`;
     if (shortest) html += `Shortest book: <strong>${shortest.title}</strong> (${shortest.pages} pages)<br>`;
@@ -1282,8 +1263,6 @@ function renderStats() {
     if (maxYearBooksYear) html += `Most books in a year: ${maxYearBooks} (${maxYearBooksYear})<br>`;
     if (maxYearPagesYear) html += `Most pages in a year: ${maxYearPages} (${maxYearPagesYear})<br>`;
     html += '</div></div>';
-
-    // Reading speed block
     html += '<div class="stats-block"><h2>Reading Speed</h2><div class="stats-list">';
     html += `<strong>Average:</strong> ${speeds.avg} pages/day<br>`;
     if (speeds.fastest) {
@@ -1293,9 +1272,7 @@ function renderStats() {
         html += `<strong>Slowest:</strong> ${speeds.slowest.book.title} (${speeds.slowest.speed.toFixed(1)} p/d over ${speeds.slowest.days.toFixed(1)} days)<br>`;
     }
     html += '</div></div>';
-
     html += '</div>';
-
     html += '<div class="stats-year-block"><h2>By Year</h2><div class="stats-list">';
     if (Object.keys(perYear).length === 0) {
         html += "none";
@@ -1305,9 +1282,7 @@ function renderStats() {
         });
     }
     html += '</div></div>';
-
     container.innerHTML = html;
-
     const labels = Object.keys(perYear).sort((a,b) => a - b);
     if (labels.length === 0) return;
     const booksData = labels.map(y => perYear[y].books);
@@ -1330,7 +1305,6 @@ function renderStats() {
     });
 }
 
-// Profile stats (updated for read count)
 function renderProfileStats() {
     const container = document.getElementById("profileStats");
     const readBooks = books.filter(b => b.exclusiveShelf === "read");
@@ -1347,7 +1321,6 @@ function renderProfileStats() {
     `;
 }
 
-// Shelf manager (unchanged)
 function renderShelfManager() {
     const container = document.getElementById("shelfManager");
     container.innerHTML = "";
@@ -1394,7 +1367,6 @@ function renderShelfManager() {
     });
 }
 
-// Recent books (unchanged)
 function renderRecentBooks() {
     const container = document.getElementById("recentBooksContainer");
     container.innerHTML = "";
@@ -1423,7 +1395,6 @@ function renderRecentBooks() {
     if (!container.innerHTML.trim()) container.innerHTML = "<p>No activity yet.</p>";
 }
 
-// Favourites (unchanged)
 function renderFavourites() {
     const container = document.getElementById("favouritesContainer");
     container.innerHTML = "";
@@ -1459,7 +1430,6 @@ function renderFavourites() {
     if (!hasContent) container.innerHTML = "<p>No favourites yet.</p>";
 }
 
-// Goals functions (unchanged)
 function loadGoalsForYear() {
     const year = Number(goalYear.value) || new Date().getFullYear();
     goalYear.value = year;
@@ -1508,7 +1478,6 @@ document.getElementById("showCoversTimeline").addEventListener("change", e => {
     renderTimeline();
 });
 
-// Sorting comparison (updated for readCount)
 function compare(a, b, col) {
     let av = a[col];
     let bv = b[col];
@@ -1526,9 +1495,7 @@ function compare(a, b, col) {
         return getLatestFinished(a) - getLatestFinished(b);
     }
     if (col === "readCount") {
-        av = getReadCount(a);
-        bv = getReadCount(b);
-        return av - bv;
+        return getReadCount(a) - getReadCount(b);
     }
     if (col === "shelves") {
         av = [a.exclusiveShelf, ...(a.shelves || [])].join(", ");
@@ -1561,7 +1528,6 @@ function updateSortIndicators() {
     }
 }
 
-// Event listeners (full)
 document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 document.getElementById("addBook").addEventListener("click", () => openEditModal());
 document.getElementById("searchInput").addEventListener("input", renderTable);
@@ -1702,7 +1668,6 @@ document.getElementById("filterInfo").addEventListener("click", () => {
 Combine with spaces (AND).`);
 });
 
-// Import helpers (unchanged)
 function parseCSVLine(line) {
     const result = [];
     let field = "";
@@ -1718,6 +1683,7 @@ function parseCSVLine(line) {
     result.push(field);
     return result;
 }
+
 function parseCSV(text) {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (!lines.length) return;
@@ -1757,6 +1723,7 @@ function parseCSV(text) {
     saveBooksToLocal();
     renderAll();
 }
+
 function importJSON(text) {
     let data;
     try { data = JSON.parse(text); } catch { return alert("Invalid JSON"); }
@@ -1768,7 +1735,6 @@ function importJSON(text) {
     renderAll();
 }
 
-// Initial setup
 loadLocalData();
 const savedTab = localStorage.getItem(TAB_KEY) || "list";
 switchTab(savedTab);
