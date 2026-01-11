@@ -184,7 +184,7 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.6.1 – shelf filter preserved on edit, added country & genre fields with search
+    Version 1.6.2 – shelf filter preserved on edit, added country & genre fields with search. Fixed missing code
 </section>
 <!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
@@ -1467,7 +1467,115 @@ document.getElementById("saveEdit").addEventListener("click", () => {
     renderAll();
     closeEditModal();
 });
-// Updated filter help
+ // Event listeners
+document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+document.getElementById("addBook").addEventListener("click", () => openEditModal());
+document.getElementById("searchInput").addEventListener("input", renderTable);
+document.getElementById("shelfFilter").addEventListener("change", renderTable);
+document.querySelectorAll("th[data-col]").forEach(th => th.addEventListener("click", () => handleSort(th.dataset.col)));
+document.getElementById("sortRecent").addEventListener("click", () => {
+    if (sortState.column === null) {
+        sortState.direction *= -1;
+    } else {
+        sortState.column = null;
+        sortState.direction = 1;
+    }
+    updateSortIndicators();
+    renderTable();
+});
+document.getElementById("fileInput").addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        if (file.name.endsWith(".json")) importJSON(ev.target.result);
+        else parseCSV(ev.target.result);
+    };
+    reader.readAsText(file);
+});
+document.getElementById("exportData").addEventListener("click", () => {
+    const data = { books };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "reading-list-export.json";
+    a.click();
+    URL.revokeObjectURL(url);
+});
+document.getElementById("clearStorage").addEventListener("click", () => {
+    if (confirm("Clear all local data? (Cloud data stays if signed in)")) {
+        localStorage.clear();
+        books = [];
+        profile = { favourites: [], favouriteSeries: [] };
+        goals = {};
+        shelfColors = {};
+        loadLocalData();
+        renderAll();
+    }
+});
+document.getElementById("signInBtn").addEventListener("click", () => {
+    const email = document.getElementById("authEmail").value.trim();
+    const pass = document.getElementById("authPassword").value;
+    if (!email || !pass) return alert("Enter email and password");
+    auth.signInWithEmailAndPassword(email, pass).catch(err => alert("Sign in error: " + err.message));
+});
+document.getElementById("signUpBtn").addEventListener("click", () => {
+    const email = document.getElementById("authEmail").value.trim();
+    const pass = document.getElementById("authPassword").value;
+    if (!email || !pass) return alert("Enter email and password");
+    auth.createUserWithEmailAndPassword(email, pass).catch(err => alert("Sign up error: " + err.message));
+});
+document.getElementById("signOutBtn").addEventListener("click", () => auth.signOut());
+document.getElementById("showNumbers").addEventListener("change", () => {
+    localStorage.setItem(SHOW_NUM_KEY, document.getElementById("showNumbers").checked);
+    renderTable();
+});
+document.getElementById("profilePic").addEventListener("click", () => document.getElementById("profilePicInput").click());
+document.getElementById("profilePicInput").addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        profile.picture = ev.target.result;
+        document.getElementById("profilePic").src = profile.picture;
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    };
+    reader.readAsDataURL(file);
+});
+let profileSaveTimeout;
+document.getElementById("profileNick").addEventListener("input", () => {
+    clearTimeout(profileSaveTimeout);
+    profileSaveTimeout = setTimeout(() => {
+        profile.nick = document.getElementById("profileNick").value.trim();
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    }, 800);
+});
+document.getElementById("profileBio").addEventListener("input", () => {
+    clearTimeout(profileSaveTimeout);
+    profileSaveTimeout = setTimeout(() => {
+        profile.bio = document.getElementById("profileBio").value.trim();
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    }, 800);
+});
+document.getElementById("removeBook").addEventListener("click", () => {
+    if (!editingBook || !confirm("Really remove this book?")) return;
+    profile.favourites = profile.favourites.filter(id => id !== editingBook.importOrder);
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    books = books.filter(b => b !== editingBook);
+    saveBooksToLocal();
+    renderAll();
+    closeEditModal();
+});
+document.getElementById("showYearGoalProgress").addEventListener("change", e => {
+    showYearGoalProgress = e.target.checked;
+    localStorage.setItem(SHOW_YEAR_GOAL_PROGRESS_KEY, JSON.stringify(showYearGoalProgress));
+    renderYearGoalProgress();
+});
+document.getElementById("closeEdit").addEventListener("click", closeEditModal);
+document.getElementById("editModal").addEventListener("click", e => {
+    if (e.target === document.getElementById("editModal")) closeEditModal();
+});
 document.getElementById("filterInfo").addEventListener("click", () => {
     alert(`Search syntax:
 • Normal words → title / author / series / notes
@@ -1485,6 +1593,7 @@ document.getElementById("filterInfo").addEventListener("click", () => {
 Also accepts dateadded: and datestarted:
 Combine with spaces (AND).`);
 });
+    
 // Import helpers
 function parseCSVLine(line) {
     const result = [];
@@ -1565,3 +1674,4 @@ loadGoalsForYear();
 </script>
 </body>
 </html>
+
