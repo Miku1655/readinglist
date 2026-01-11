@@ -1373,6 +1373,8 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         title: document.getElementById("editTitle").value.trim(),
         author: document.getElementById("editAuthor").value.trim(),
         series: document.getElementById("editSeries").value.trim(),
+        seriesNumber: document.getElementById("editSeriesNumber").value ? Number(document.getElementById("editSeriesNumber").value) : null,
+        language: document.getElementById("editLanguage").value.trim() || null,
         shelves: document.getElementById("editShelves").value.split(",").map(s => s.trim()).filter(Boolean),
         exclusiveShelf: document.getElementById("editExclusiveShelf").value,
         pages: Number(document.getElementById("editPages").value) || 0,
@@ -1382,8 +1384,6 @@ document.getElementById("saveEdit").addEventListener("click", () => {
         rating: Number(document.getElementById("editRating").value) || 0,
         notes: document.getElementById("editNotes").value.trim(),
         coverUrl: document.getElementById("editCoverUrl").value.trim() || null
-		data.seriesNumber = document.getElementById("editSeriesNumber").value ? Number(document.getElementById("editSeriesNumber").value) : null;
-		data.language = document.getElementById("editLanguage").value.trim() || null;
     };
     const bumpNow = document.getElementById("editBumpRecent").checked;
     if (editingBook) {
@@ -1650,3 +1650,4 @@ loadGoalsForYear();
 </script>
 </body>
 </html>
+
