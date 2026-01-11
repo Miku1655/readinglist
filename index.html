@@ -49,19 +49,12 @@ button.danger:hover { background-color: #a83838; }
 #filterInfo { cursor: help; color: #888; }
 #cloudButtons, #coverCloudButtons { margin-top: 12px; }
 .profile-recent-section h4 { margin: 16px 0 8px 0; font-size:1em; }
-#goalsSection { background: #1a1a1a; padding: 16px; border: 1px solid #333; border-radius: 8px; margin: 16px 0; }
-#goalsSection h3 { margin-top: 0; }
-#goalsSection .goals-inline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
-#generalSettings { background: #1a1a1a; padding: 16px; border: 1px solid #333; border-radius: 8px; margin: 16px 0; }
-#coversSection { background: #1a1a1a; padding: 16px; border: 1px solid #333; border-radius: 8px; margin: 16px 0; }
-.hidden-date { font-size: 0.85em; color: #aaa; }
-.timeline-entry { margin-bottom: 16px; padding: 10px; background: #1a1a1a; border: 1px solid #333; border-radius: 6px; }
-.timeline-entry h4 { margin: 0 0 8px 0; }
-.timeline-entry ul { padding-left: 0; margin: 0; }
-.timeline-entry li { list-style: none; display: flex; gap: 16px; align-items: flex-start; margin-bottom: 8px; }
-.timeline-entry li img { flex-shrink: 0; width: 80px; height: auto; max-height: 120px; object-fit: contain; background: #1a1a1a; }
-.timeline-entry li div { flex: 1; }
-#coversCount { margin-top: 8px; font-size: 0.9em; color: #ccc; }
+/* New styles for edit modal */
+.edit-section { background: #1a1a1a; padding: 12px; margin-bottom: 12px; border-radius: 6px; border: 1px solid #333; }
+.edit-section h4 { margin: 0 0 10px 0; font-size: 1em; cursor: pointer; user-select: none; }
+.edit-section.collapsed .edit-section-content { display: none; }
+.read-entry { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 8px; }
+.read-entry button { background: #8b2c2c; padding: 4px 8px; font-size: 0.8em; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -75,8 +68,10 @@ button.danger:hover { background-color: #a83838; }
     <button class="tab active" data-tab="list">List</button>
     <button class="tab" data-tab="stats">Stats</button>
     <button class="tab" data-tab="timeline">Timeline</button>
+    <button class="tab" data-tab="challenges">Challenges</button>
     <button class="tab" data-tab="options">Options</button>
 </div>
+
 <section id="tab-list" class="tab-content active">
     <label>Filter by shelf: <select id="shelfFilter"></select></label>
     <button id="sortRecent" style="margin-left: 12px;">Sort by recent <span id="recentSortIndicator">▼</span></button>
@@ -96,21 +91,23 @@ button.danger:hover { background-color: #a83838; }
                 <th data-col="shelves">Shelves <span class="sort"></span></th>
                 <th data-col="pages">Pages <span class="sort"></span></th>
                 <th data-col="year">Year <span class="sort"></span></th>
-                <th data-col="dateRead">Date Read <span class="sort"></span></th>
-                <th data-col="readCount">Read Count <span class="sort"></span></th>
+                <th data-col="readCount">Reads <span class="sort"></span></th>
                 <th>Edit</th>
             </tr>
         </thead>
         <tbody id="tableBody"></tbody>
     </table>
 </section>
+
 <section id="tab-stats" class="tab-content">
     <div id="stats"></div>
     <div id="statsChartContainer"><canvas id="statsChart"></canvas></div>
 </section>
+
 <section id="tab-timeline" class="tab-content">
     <div id="timelineContainer"></div>
 </section>
+
 <section id="tab-profile" class="tab-content">
     <div id="profileContainer" style="max-width:800px; margin:auto;">
         <div style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
@@ -134,14 +131,10 @@ button.danger:hover { background-color: #a83838; }
         </div>
     </div>
 </section>
-<section id="tab-options" class="tab-content">
-    <h3>Import / Export</h3>
-    <label>Import list: <input type="file" id="fileInput" accept=".csv,.json"></label>
-    <button id="exportData">Export list</button>
-    <button id="clearStorage" style="margin-left:12px;">Clear local list data</button>
-    <hr style="border:1px solid #333; margin:16px 0;">
+
+<section id="tab-challenges" class="tab-content">
+    <h3>Yearly Goals</h3>
     <div id="goalsSection">
-        <h3>Yearly Goals</h3>
         <div class="goals-inline">
             <label>Year: <input type="number" id="goalYear" style="width:80px;"></label>
             <label>Books goal: <input type="number" id="yearBooksGoal" style="width:100px;"></label>
@@ -150,6 +143,15 @@ button.danger:hover { background-color: #a83838; }
             <button id="removeGoal">Remove</button>
         </div>
     </div>
+    <p style="margin-top:30px; color:#aaa;">Custom challenges (e.g. read by tag, author, etc.) coming in future updates!</p>
+</section>
+
+<section id="tab-options" class="tab-content">
+    <h3>Import / Export</h3>
+    <label>Import list: <input type="file" id="fileInput" accept=".csv,.json"></label>
+    <button id="exportData">Export list</button>
+    <button id="clearStorage" style="margin-left:12px;">Clear local list data</button>
+    <hr style="border:1px solid #333; margin:16px 0;">
     <div id="generalSettings">
         <h3>General Settings</h3>
         <label><input type="checkbox" id="showNumbers" checked> Show row numbers</label><br><br>
@@ -184,42 +186,70 @@ button.danger:hover { background-color: #a83838; }
     <h3>Manage Shelves</h3>
     <div id="shelfManager"></div>
     <hr style="border:1px solid #333; margin:16px 0;">
-    Version 1.6.2 – shelf filter preserved on edit, added country & genre fields with search. Fixed missing code
+    Version 1.7 – tags, reading speeds, multi-read support, cleaner edit modal, Challenges tab
 </section>
+
 <!-- Edit Modal -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
-    <div style="background:#222; padding:20px; border:1px solid #444; max-width:500px; width:100%; max-height:90vh; overflow-y:auto;">
+    <div style="background:#222; padding:20px; border:1px solid #444; max-width:600px; width:100%; max-height:90vh; overflow-y:auto;">
         <h3>Edit Book</h3>
-        <label>Title: <input type="text" id="editTitle" placeholder="Title" style="width:100%;"></label><br>
-        <label>Author: <input type="text" id="editAuthor" placeholder="Author" style="width:100%;"></label><br>
-        <label>Series: <input type="text" id="editSeries" style="width:100%;"></label><br>
-        <label>Series volume/number: <input type="number" id="editSeriesNumber" step="0.1" placeholder="e.g. 3 or 2.5" style="width:140px;"></label><br>
-        <label>Language: <input type="text" id="editLanguage" placeholder="e.g. English, Japanese" style="width:100%;"></label><br>
-        <label>Country: <input type="text" id="editCountry" placeholder="e.g. Japan, USA" style="width:100%;"></label><br>
-        <label>Genre: <input type="text" id="editGenre" placeholder="e.g. Fantasy, Mystery" style="width:100%;"></label><br>
-        <label>Shelves (comma separated): <input type="text" id="editShelves" style="width:100%;"></label><br>
-        <label>Status:
-            <select id="editExclusiveShelf" style="width:100%;">
-                <option value="read">read</option>
-                <option value="currently-reading">currently-reading</option>
-                <option value="to-read">to-read</option>
-                <option value="dnf">dnf</option>
-            </select>
-        </label><br>
-        <label>Pages: <input type="number" id="editPages"></label><br>
-        <label>Year: <input type="number" id="editYear"></label><br>
-        <label>Date Read(s) (comma separated): <input type="text" id="editDateRead"></label><br>
-        <label>Read Count: <input type="number" id="editReadCount" min="0" value="0"></label><br>
-        <label>Rating (0-5): <input type="number" id="editRating" min="0" max="5"></label><br>
-        <label>Favourite book: <input type="checkbox" id="editFavourite"></label><br>
-        <label id="favSeriesLabel">Favourite series: <input type="checkbox" id="editFavouriteSeries"></label><br>
-        <label>Bump to top in recent sort: <input type="checkbox" id="editBumpRecent"></label><br>
-        <label class="hidden-date">Date added (hidden): <input type="date" id="editDateAdded"></label><br>
-        <label class="hidden-date">Date started (hidden): <input type="date" id="editDateStarted"></label><br>
-        <label>Cover URL (optional): <input type="text" id="editCoverUrl" style="width:100%;"></label>
-        <button id="fetchCoverBtn">Auto-fetch from Google Books</button>
-        <div style="margin-top:8px;"><img id="coverPreview" style="max-height:250px; max-width:100%; border:1px solid #444;" alt="Cover preview"></div>
-        <textarea id="editNotes" placeholder="Notes" style="width:100%; height:80px; resize:vertical;"></textarea>
+
+        <div class="edit-section">
+            <h4 onclick="this.parentElement.classList.toggle('collapsed')">Basic Info ▼</h4>
+            <div class="edit-section-content">
+                <label>Title: <input type="text" id="editTitle" style="width:100%;"></label><br>
+                <label>Author: <input type="text" id="editAuthor" style="width:100%;"></label><br>
+                <label>Series: <input type="text" id="editSeries" style="width:100%;"></label><br>
+                <label>Series #: <input type="number" id="editSeriesNumber" step="0.1" style="width:140px;"></label><br>
+                <label>Pages: <input type="number" id="editPages"></label><br>
+                <label>Year: <input type="number" id="editYear"></label><br>
+                <label>Rating (0-5): <input type="number" id="editRating" min="0" max="5"></label><br>
+                <label>Favourite book: <input type="checkbox" id="editFavourite"></label><br>
+                <label id="favSeriesLabel">Favourite series: <input type="checkbox" id="editFavouriteSeries"></label><br>
+            </div>
+        </div>
+
+        <div class="edit-section">
+            <h4 onclick="this.parentElement.classList.toggle('collapsed')">Metadata ▼</h4>
+            <div class="edit-section-content">
+                <label>Language: <input type="text" id="editLanguage" style="width:100%;"></label><br>
+                <label>Country: <input type="text" id="editCountry" style="width:100%;"></label><br>
+                <label>Genre: <input type="text" id="editGenre" style="width:100%;"></label><br>
+                <label>Tags (comma separated): <input type="text" id="editTags" style="width:100%;"></label><br>
+                <label>Shelves (comma separated): <input type="text" id="editShelves" style="width:100%;"></label><br>
+                <label>Status:
+                    <select id="editExclusiveShelf">
+                        <option value="read">read</option>
+                        <option value="currently-reading">currently-reading</option>
+                        <option value="to-read">to-read</option>
+                        <option value="dnf">dnf</option>
+                    </select>
+                </label><br>
+            </div>
+        </div>
+
+        <div class="edit-section">
+            <h4 onclick="this.parentElement.classList.toggle('collapsed')">Reads / Re-reads ▼</h4>
+            <div class="edit-section-content">
+                <div id="readsList"></div>
+                <button id="addReadBtn">+ Add Read</button>
+                <p style="font-size:0.85em; color:#aaa; margin-top:8px;">
+                    Read count is auto-calculated from finished reads.<br>
+                    Current read (if status = currently-reading) will have start date but no finish date.
+                </p>
+            </div>
+        </div>
+
+        <div class="edit-section">
+            <h4 onclick="this.parentElement.classList.toggle('collapsed')">Cover & Notes ▼</h4>
+            <div class="edit-section-content">
+                <label>Cover URL: <input type="text" id="editCoverUrl" style="width:100%;"></label>
+                <button id="fetchCoverBtn">Auto-fetch from Google Books</button>
+                <div style="margin-top:8px;"><img id="coverPreview" style="max-height:250px; max-width:100%; border:1px solid #444;" alt="Cover preview"></div>
+                <textarea id="editNotes" placeholder="Notes" style="width:100%; height:100px; resize:vertical; margin-top:12px;"></textarea>
+            </div>
+        </div>
+
         <div class="modal-footer">
             <button id="removeBook" class="danger">Remove</button>
             <div class="modal-actions-right">
@@ -229,6 +259,7 @@ button.danger:hover { background-color: #a83838; }
         </div>
     </div>
 </div>
+
 <script>
 // Firebase config
 const firebaseConfig = {
@@ -243,6 +274,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
+
 // Element references
 const goalYear = document.getElementById("goalYear");
 const yearBooksGoal = document.getElementById("yearBooksGoal");
@@ -250,6 +282,7 @@ const yearPagesGoal = document.getElementById("yearPagesGoal");
 const cloudButtons = document.getElementById("cloudButtons");
 const coverCloudButtons = document.getElementById("coverCloudButtons");
 const minAuthorBooksInput = document.getElementById("minAuthorBooks");
+
 // Global state & constants
 let currentUser = null;
 let userRef = null;
@@ -274,17 +307,63 @@ let minAuthorBooks = 2;
 let showCoversInTimeline = false;
 let showYearGoalProgress = true;
 let notePopup = null;
-// Helpers
-function getLatestReadTimestamp(book) {
-    if (!book.dateRead || book.exclusiveShelf !== "read") return 0;
-    const times = book.dateRead.split(",").map(d => new Date(d.trim()).getTime()).filter(t => !isNaN(t));
-    return times.length ? Math.max(...times) : 0;
+
+// New helpers for reads and activity
+function getReadCount(book) {
+    return book.reads ? book.reads.filter(r => r.finished !== null).length : 0;
 }
+
+function getLatestFinished(book) {
+    if (!book.reads || book.reads.length === 0) return 0;
+    const finished = book.reads.map(r => r.finished).filter(t => t !== null);
+    return finished.length > 0 ? Math.max(...finished) : 0;
+}
+
+function getCurrentReadStart(book) {
+    if (!book.reads || book.reads.length === 0) return 0;
+    const current = book.reads.find(r => r.finished === null);
+    return current ? current.started || 0 : 0;
+}
+
 function getActivityTimestamp(book) {
-    const primary = book.lastFinished ?? book.dateStarted ?? book.dateAdded ?? Number.NEGATIVE_INFINITY;
-    const bump = book.bumpTime ?? Number.NEGATIVE_INFINITY;
-    return Math.max(primary, bump);
+    const latestFinished = getLatestFinished(book);
+    const currentStart = getCurrentReadStart(book);
+    return Math.max(latestFinished, currentStart);
 }
+
+// Reading speed calculation
+function calculateReadingSpeeds() {
+    const validReads = [];
+    books.forEach(book => {
+        if (!book.reads || book.pages <= 0) return;
+        book.reads.forEach(read => {
+            if (read.started !== null && read.finished !== null) {
+                const days = (read.finished - read.started) / (1000 * 60 * 60 * 24);
+                if (days > 0) {
+                    validReads.push({
+                        book: book,
+                        speed: book.pages / days,
+                        days: days
+                    });
+                }
+            }
+        });
+    });
+
+    if (validReads.length === 0) {
+        return { avg: "0", fastest: null, slowest: null };
+    }
+
+    const speeds = validReads.map(r => r.speed);
+    const avg = (speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1);
+    validReads.sort((a, b) => b.speed - a.speed);
+    const fastest = validReads[0];
+    const slowest = validReads[validReads.length - 1];
+
+    return { avg, fastest, slowest };
+}
+
+// Cover fetch (unchanged)
 async function fetchCover(book) {
     let query = "";
     if (book.isbn) {
@@ -312,6 +391,8 @@ async function fetchCover(book) {
         return null;
     }
 }
+
+// Card creation functions (unchanged)
 function createBookCard(book) {
     const div = document.createElement("div");
     div.className = "book-card";
@@ -328,6 +409,7 @@ function createBookCard(book) {
     div.addEventListener("click", () => openEditModal(book));
     return div;
 }
+
 function createSeriesCard(series) {
     let seriesBooks = books.filter(b => b.series === series);
     if (seriesBooks.length === 0) return null;
@@ -350,8 +432,9 @@ function createSeriesCard(series) {
     div.title = `${series} (${count} books)`;
     return div;
 }
+
+// Draggable favourites (unchanged)
 function makeFavouritesDraggable(container) {
-    // Desktop drag events (existing)
     container.addEventListener("dragstart", e => {
         const card = e.target.closest(".book-card");
         if (card) {
@@ -382,8 +465,6 @@ function makeFavouritesDraggable(container) {
         }
     });
     container.addEventListener("drop", e => e.preventDefault());
-
-    // Mobile touch support
     container.addEventListener("touchstart", e => {
         if (e.touches.length === 1) {
             const card = e.target.closest(".book-card");
@@ -417,6 +498,8 @@ function makeFavouritesDraggable(container) {
         }
     });
 }
+
+// Note popup (unchanged)
 function createNotePopup() {
     notePopup = document.createElement("div");
     notePopup.style.position = "absolute";
@@ -445,7 +528,8 @@ function moveNotePopup(e) {
     notePopup.style.left = (e.clientX + 15) + "px";
     notePopup.style.top = (e.clientY + 20) + "px";
 }
-// Auth listener
+
+// Auth listener (unchanged)
 auth.onAuthStateChanged(user => {
     currentUser = user;
     const syncStatus = document.getElementById("syncStatus");
@@ -472,7 +556,8 @@ auth.onAuthStateChanged(user => {
     loadLocalData();
     renderAll();
 });
-// Load local data
+
+// Load local data with migration to new format
 function loadLocalData() {
     const savedBooks = localStorage.getItem(STORAGE_KEY);
     if (savedBooks) {
@@ -484,23 +569,44 @@ function loadLocalData() {
     books.forEach(b => {
         if (!b.importOrder) b.importOrder = nextImportOrder++;
         maxOrder = Math.max(maxOrder, b.importOrder ?? 0);
-        if (b.lastModified != null) {
-            if (b.bumpTime == null) b.bumpTime = b.lastModified;
-            delete b.lastModified;
+
+        // Migration from old format
+        if (!Array.isArray(b.reads)) {
+            b.reads = [];
+            if (b.dateRead) {
+                const finishDates = b.dateRead.split(",").map(d => d.trim()).filter(Boolean);
+                finishDates.forEach(fd => {
+                    const fTs = new Date(fd).getTime();
+                    if (!isNaN(fTs)) {
+                        b.reads.push({ started: b.dateStarted || null, finished: fTs });
+                    }
+                });
+            }
+            if (b.exclusiveShelf === "currently-reading" && b.dateStarted) {
+                const sTs = new Date(b.dateStarted).getTime();
+                if (!isNaN(sTs)) {
+                    b.reads.push({ started: sTs, finished: null });
+                }
+            }
+            delete b.dateRead;
+            delete b.dateStarted;
+            delete b.readCount;
+            delete b.lastFinished;
         }
-        if (b.exclusiveShelf === "currently-reading" && b.dateStarted == null) b.dateStarted = b.dateAdded ?? 0;
-        if (b.exclusiveShelf === "read" && b.lastFinished == null) {
-            const ts = getLatestReadTimestamp(b);
-            if (ts > 0) b.lastFinished = ts;
-        }
+
+        // Ensure tags exist
+        if (!Array.isArray(b.tags)) b.tags = [];
     });
     nextImportOrder = maxOrder + 1;
+
     const savedProfile = localStorage.getItem(PROFILE_KEY);
     profile = savedProfile ? JSON.parse(savedProfile) : { favourites: [], favouriteSeries: [] };
     profile.favourites = (profile.favourites || []).filter(id => typeof id === 'number' && books.some(b => b.importOrder === id));
     profile.favouriteSeries = (profile.favouriteSeries || []).filter(s => typeof s === 'string');
+
     goals = JSON.parse(localStorage.getItem(GOALS_KEY) || "{}");
     shelfColors = JSON.parse(localStorage.getItem(SHELF_COLORS_KEY) || "{}");
+
     document.getElementById("showNumbers").checked = JSON.parse(localStorage.getItem(SHOW_NUM_KEY) || "true");
     minAuthorBooks = Number(localStorage.getItem(MIN_AUTHOR_BOOKS_KEY)) || 2;
     minAuthorBooksInput.value = minAuthorBooks;
@@ -508,16 +614,20 @@ function loadLocalData() {
     document.getElementById("showCoversTimeline").checked = showCoversInTimeline;
     showYearGoalProgress = JSON.parse(localStorage.getItem(SHOW_YEAR_GOAL_PROGRESS_KEY) || "true");
     document.getElementById("showYearGoalProgress").checked = showYearGoalProgress;
+
     document.getElementById("profileNick").value = profile.nick || "";
     document.getElementById("profileBio").value = profile.bio || "";
     if (profile.picture) document.getElementById("profilePic").src = profile.picture;
+
     loadGoalsForYear();
     updateCoversCount();
 }
+
 function saveBooksToLocal() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
 }
-// Shelf filter population – now preserves current selection
+
+// Shelf filter (unchanged)
 function populateShelfFilter() {
     const select = document.getElementById("shelfFilter");
     const currentValue = select.value;
@@ -533,14 +643,14 @@ function populateShelfFilter() {
         opt.textContent = s;
         select.appendChild(opt);
     });
-    // Restore previous selection if still valid
     if (currentValue && currentValue !== "all" && [...set].includes(currentValue)) {
         select.value = currentValue;
     } else {
         select.value = "all";
     }
 }
-// Cloud save
+
+// Cloud operations (unchanged except full code)
 document.getElementById("saveCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite cloud data with current local data?")) return;
@@ -560,7 +670,7 @@ document.getElementById("saveCloudBtn").addEventListener("click", () => {
         .then(() => alert("Saved to cloud successfully!"))
         .catch(err => alert("Save failed: " + err.message));
 });
-// Cloud load
+
 document.getElementById("loadCloudBtn").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Overwrite local data with cloud data? This cannot be undone.")) return;
@@ -571,55 +681,18 @@ document.getElementById("loadCloudBtn").addEventListener("click", () => {
             let loadedBooks = data.books || [];
             if (!Array.isArray(loadedBooks)) loadedBooks = Object.values(loadedBooks);
             books = loadedBooks;
-            let maxOrder = 0;
-            books.forEach(b => {
-                if (!b.importOrder) b.importOrder = nextImportOrder++;
-                maxOrder = Math.max(maxOrder, b.importOrder ?? 0);
-                if (b.lastModified != null) {
-                    if (b.bumpTime == null) b.bumpTime = b.lastModified;
-                    delete b.lastModified;
-                }
-                if (b.exclusiveShelf === "currently-reading" && b.dateStarted == null) {
-                    b.dateStarted = b.dateAdded ?? 0;
-                }
-                if (b.exclusiveShelf === "read" && b.lastFinished == null) {
-                    const ts = getLatestReadTimestamp(b);
-                    if (ts > 0) b.lastFinished = ts;
-                }
-            });
-            nextImportOrder = maxOrder + 1;
-            profile = data.profile || { favourites: [], favouriteSeries: [] };
-            profile.favourites = (profile.favourites || []).filter(id =>
-                typeof id === 'number' && books.some(b => b.importOrder === id)
-            );
-            goals = data.goals || {};
-            shelfColors = data.shelfColors || {};
-            const settings = data.settings || {};
-            document.getElementById("showNumbers").checked = settings.showNumbers ?? true;
-            localStorage.setItem(SHOW_NUM_KEY, settings.showNumbers ?? true);
-            minAuthorBooks = settings.minAuthorBooks ?? 2;
-            minAuthorBooksInput.value = minAuthorBooks;
-            localStorage.setItem(MIN_AUTHOR_BOOKS_KEY, minAuthorBooks);
-            showCoversInTimeline = settings.showCoversTimeline ?? false;
-            document.getElementById("showCoversTimeline").checked = showCoversInTimeline;
-            localStorage.setItem(SHOW_COVERS_TIMELINE_KEY, JSON.stringify(showCoversInTimeline));
-            showYearGoalProgress = settings.showYearGoalProgress ?? true;
-            document.getElementById("showYearGoalProgress").checked = showYearGoalProgress;
-            localStorage.setItem(SHOW_YEAR_GOAL_PROGRESS_KEY, JSON.stringify(showYearGoalProgress));
-            document.getElementById("profileNick").value = profile.nick || "";
-            document.getElementById("profileBio").value = profile.bio || "";
-            if (profile.picture) document.getElementById("profilePic").src = profile.picture;
+            loadLocalData(); // re-run migration and setup
             saveBooksToLocal();
             localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
             localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
             localStorage.setItem(SHELF_COLORS_KEY, JSON.stringify(shelfColors));
             renderAll();
-            loadGoalsForYear();
             alert("Loaded from cloud successfully!");
         })
         .catch(err => alert("Load failed: " + err.message));
 });
-// Cover cloud operations (unchanged)
+
+// Covers operations (unchanged, full code)
 document.getElementById("saveCoversCloud").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Save covers to cloud (separate from main data)?")) return;
@@ -631,6 +704,7 @@ document.getElementById("saveCoversCloud").addEventListener("click", () => {
         .then(() => alert("Covers saved to cloud!"))
         .catch(err => alert("Save failed: " + err.message));
 });
+
 document.getElementById("loadCoversCloud").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Load covers from cloud? This will overwrite local covers.")) return;
@@ -653,6 +727,7 @@ document.getElementById("loadCoversCloud").addEventListener("click", () => {
         })
         .catch(err => alert("Load failed: " + err.message));
 });
+
 document.getElementById("deleteCoversCloud").addEventListener("click", () => {
     if (!currentUser) return alert("Sign in first");
     if (!confirm("Delete all covers from cloud? This is irreversible.")) return;
@@ -660,7 +735,7 @@ document.getElementById("deleteCoversCloud").addEventListener("click", () => {
         .then(() => alert("Covers deleted from cloud!"))
         .catch(err => alert("Delete failed: " + err.message));
 });
-// Batch fetch covers (unchanged)
+
 document.getElementById("fetchAllCovers").addEventListener("click", async () => {
     const missing = books.filter(b => !b.coverUrl && b.title);
     if (missing.length === 0) return alert("No books are missing covers.");
@@ -678,7 +753,7 @@ document.getElementById("fetchAllCovers").addEventListener("click", async () => 
     }
     alert(`Done! Found covers for ${found} book(s).`);
 });
-// Clear local covers (unchanged)
+
 document.getElementById("clearLocalCovers").addEventListener("click", () => {
     if (!confirm("Remove ALL cover URLs from local data? This is irreversible locally.")) return;
     books.forEach(b => b.coverUrl = null);
@@ -686,29 +761,27 @@ document.getElementById("clearLocalCovers").addEventListener("click", () => {
     renderAll();
     alert("All local covers cleared.");
 });
-// New: covers counter
+
 function updateCoversCount() {
     const count = books.filter(b => b.coverUrl).length;
     const total = books.length;
     document.getElementById("coversCount").textContent =
         `${count} of ${total} books have covers (remote URLs – no disk space used by the app)`;
 }
-// renderYearGoalProgress function (new)
+
+// Year goal progress (unchanged)
 function renderYearGoalProgress() {
     const container = document.getElementById("yearGoalProgressContainer");
     container.innerHTML = "";
     if (!showYearGoalProgress) return;
-
     const currentYear = new Date().getFullYear();
     const perYear = calculatePerYear();
     const stats = perYear[currentYear] || { books: 0, pages: 0 };
     const goal = goals[currentYear] || {};
-
     if (!goal.books && !goal.pages) {
         container.innerHTML = `<div style="background:#1a1a1a;padding:12px;border:1px solid #333;border-radius:8px;"><p>No goals set for ${currentYear}.</p></div>`;
         return;
     }
-
     let html = `<div style="background:#1a1a1a;padding:16px;border:1px solid #333;border-radius:8px;"><h3>${currentYear} Goal Progress</h3>`;
     if (goal.books) {
         const percent = goal.books ? Math.min(100, Math.round(stats.books / goal.books * 100)) : 0;
@@ -742,7 +815,10 @@ function switchTab(name) {
     }
     if (name === "timeline") renderTimeline();
     if (name === "list") renderYearGoalProgress();
+    if (name === "challenges") loadGoalsForYear();
+    renderAll();
 }
+
 function renderAll() {
     populateShelfFilter();
     renderTable();
@@ -755,9 +831,11 @@ function renderAll() {
     updateCoversCount();
     if (document.querySelector('.tab.active')?.dataset.tab === "options") renderShelfManager();
 }
-// Modal
+
+// Edit modal
 function openEditModal(book = null) {
-    editingBook = book;
+    editingBook = book || { reads: [], tags: [] };
+
     document.getElementById("editTitle").value = book?.title || "";
     document.getElementById("editAuthor").value = book?.author || "";
     document.getElementById("editSeries").value = book?.series || "";
@@ -765,15 +843,15 @@ function openEditModal(book = null) {
     document.getElementById("editLanguage").value = book?.language || "";
     document.getElementById("editCountry").value = book?.country || "";
     document.getElementById("editGenre").value = book?.genre || "";
+    document.getElementById("editTags").value = (book?.tags || []).join(", ");
     document.getElementById("editShelves").value = (book?.shelves || []).join(", ");
     document.getElementById("editExclusiveShelf").value = book?.exclusiveShelf || "to-read";
     document.getElementById("editPages").value = book?.pages || "";
     document.getElementById("editYear").value = book?.year || "";
-    document.getElementById("editDateRead").value = book?.dateRead || "";
-    document.getElementById("editReadCount").value = book?.readCount ?? 0;
     document.getElementById("editRating").value = book?.rating || 0;
     document.getElementById("editNotes").value = book?.notes || "";
     document.getElementById("editCoverUrl").value = book?.coverUrl || "";
+
     const preview = document.getElementById("coverPreview");
     if (book?.coverUrl) {
         preview.src = book.coverUrl;
@@ -781,8 +859,9 @@ function openEditModal(book = null) {
     } else {
         preview.style.display = "none";
     }
+
     document.getElementById("editFavourite").checked = !!book && profile.favourites.includes(book.importOrder);
-    document.getElementById("editBumpRecent").checked = false;
+
     const series = book?.series || "";
     if (series) {
         document.getElementById("favSeriesLabel").style.display = "block";
@@ -790,79 +869,126 @@ function openEditModal(book = null) {
     } else {
         document.getElementById("favSeriesLabel").style.display = "none";
     }
-    const today = new Date().toISOString().substring(0,10);
-    document.getElementById("editDateAdded").value = book?.dateAdded ? new Date(book.dateAdded).toISOString().substring(0,10) : today;
-    document.getElementById("editDateStarted").value = book?.dateStarted ? new Date(book.dateStarted).toISOString().substring(0,10) : "";
+
+    // Dynamic reads list
+    const readsList = document.getElementById("readsList");
+    readsList.innerHTML = "";
+    const reads = editingBook.reads || [];
+    reads.forEach((read, idx) => {
+        const div = document.createElement("div");
+        div.className = "read-entry";
+        div.innerHTML = `
+            <input type="date" class="readStart" value="${read.started ? new Date(read.started).toISOString().substring(0,10) : ''}">
+            <input type="date" class="readFinish" value="${read.finished ? new Date(read.finished).toISOString().substring(0,10) : ''}">
+            <button type="button" class="removeRead">Remove</button>
+        `;
+        div.querySelector(".removeRead").addEventListener("click", () => {
+            reads.splice(idx, 1);
+            openEditModal(editingBook);
+        });
+        readsList.appendChild(div);
+    });
+
+    // Add read button
+    document.getElementById("addReadBtn").onclick = () => {
+        reads.push({ started: Date.now(), finished: null });
+        openEditModal(editingBook);
+    };
+
+    // Status change handling
+    document.getElementById("editExclusiveShelf").onchange = () => {
+        const status = document.getElementById("editExclusiveShelf").value;
+        if (status === "currently-reading") {
+            if (reads.length === 0 || reads[reads.length - 1].finished !== null) {
+                reads.push({ started: Date.now(), finished: null });
+            }
+        }
+        openEditModal(editingBook);
+    };
+
     document.getElementById("editModal").style.display = "flex";
 }
+
 function closeEditModal() {
     editingBook = null;
     document.getElementById("editModal").style.display = "none";
 }
-document.getElementById("fetchCoverBtn").addEventListener("click", async () => {
-    const title = document.getElementById("editTitle").value.trim();
-    if (!title) return alert("Enter a title first.");
-    const tempBook = {
-        title: title,
+
+// Save edit
+document.getElementById("saveEdit").addEventListener("click", () => {
+    const now = Date.now();
+    const data = {
+        title: document.getElementById("editTitle").value.trim(),
         author: document.getElementById("editAuthor").value.trim(),
-        isbn: editingBook?.isbn
+        series: document.getElementById("editSeries").value.trim(),
+        seriesNumber: document.getElementById("editSeriesNumber").value ? Number(document.getElementById("editSeriesNumber").value) : null,
+        language: document.getElementById("editLanguage").value.trim() || null,
+        country: document.getElementById("editCountry").value.trim() || null,
+        genre: document.getElementById("editGenre").value.trim() || null,
+        tags: document.getElementById("editTags").value.split(",").map(t => t.trim()).filter(Boolean),
+        shelves: document.getElementById("editShelves").value.split(",").map(s => s.trim()).filter(Boolean),
+        exclusiveShelf: document.getElementById("editExclusiveShelf").value,
+        pages: Number(document.getElementById("editPages").value) || 0,
+        year: Number(document.getElementById("editYear").value) || null,
+        rating: Number(document.getElementById("editRating").value) || 0,
+        notes: document.getElementById("editNotes").value.trim(),
+        coverUrl: document.getElementById("editCoverUrl").value.trim() || null
     };
-    const url = await fetchCover(tempBook);
-    const preview = document.getElementById("coverPreview");
-    if (url) {
-        document.getElementById("editCoverUrl").value = url;
-        preview.src = url;
-        preview.style.display = "block";
-    } else {
-        alert("No cover found for this book.");
+
+    // Collect reads
+    const readEntries = document.querySelectorAll(".read-entry");
+    const newReads = [];
+    readEntries.forEach(entry => {
+        const startVal = entry.querySelector(".readStart").value;
+        const finishVal = entry.querySelector(".readFinish").value;
+        const started = startVal ? new Date(startVal).getTime() : null;
+        const finished = finishVal ? new Date(finishVal).getTime() : null;
+        if (started !== null || finished !== null) {
+            newReads.push({ started, finished });
+        }
+    });
+    data.reads = newReads;
+
+    // Ensure currently-reading has an open read
+    if (data.exclusiveShelf === "currently-reading") {
+        if (data.reads.length === 0 || data.reads[data.reads.length - 1].finished !== null) {
+            data.reads.push({ started: now, finished: null });
+        }
+    } else if (data.exclusiveShelf !== "read") {
+        data.reads = data.reads.filter(r => r.finished !== null);
     }
+
+    if (editingBook) {
+        Object.assign(editingBook, data);
+    } else {
+        data.importOrder = nextImportOrder++;
+        data.dateAdded = now;
+        books.unshift(data);
+        editingBook = data;
+    }
+
+    // Favourites
+    const bookId = editingBook.importOrder;
+    const isFav = document.getElementById("editFavourite").checked;
+    if (isFav) {
+        if (!profile.favourites.includes(bookId)) profile.favourites.push(bookId);
+    } else {
+        profile.favourites = profile.favourites.filter(id => id !== bookId);
+    }
+    const isFavSeries = document.getElementById("editFavouriteSeries").checked;
+    if (isFavSeries && data.series && !profile.favouriteSeries.includes(data.series)) {
+        profile.favouriteSeries.push(data.series);
+    } else if (!isFavSeries && data.series) {
+        profile.favouriteSeries = profile.favouriteSeries.filter(s => s !== data.series);
+    }
+
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    saveBooksToLocal();
+    renderAll();
+    closeEditModal();
 });
-// Sorting (unchanged)
-function compare(a, b, col) {
-    let av = a[col];
-    let bv = b[col];
-    if (col === "year") {
-        av = av ?? Infinity;
-        bv = bv ?? Infinity;
-        return av - bv;
-    }
-    if (col === "pages" || col === "rating" || col === "readCount") {
-        av = av ?? 0;
-        bv = bv ?? 0;
-        return av - bv;
-    }
-    if (col === "dateRead") {
-        return getLatestReadTimestamp(a) - getLatestReadTimestamp(b);
-    }
-    if (col === "shelves") {
-        av = [a.exclusiveShelf, ...(a.shelves || [])].join(", ");
-        bv = [b.exclusiveShelf, ...(b.shelves || [])].join(", ");
-    }
-    av = av ?? "";
-    bv = bv ?? "";
-    return String(av).localeCompare(String(bv));
-}
-function handleSort(col) {
-    if (sortState.column === col) {
-        sortState.direction *= -1;
-    } else {
-        sortState.column = col;
-        sortState.direction = 1;
-    }
-    updateSortIndicators();
-    renderTable();
-}
-function updateSortIndicators() {
-    document.querySelectorAll(".sort").forEach(s => s.textContent = "");
-    document.getElementById("recentSortIndicator").textContent = "";
-    if (sortState.column) {
-        const el = document.querySelector(`th[data-col="${sortState.column}"] .sort`);
-        if (el) el.textContent = sortState.direction > 0 ? "▲" : "▼";
-    } else {
-        document.getElementById("recentSortIndicator").textContent = sortState.direction > 0 ? "▼" : "▲";
-    }
-}
-// Search
+
+// Search with tag support
 function filterBooksByQuery(list, query) {
     const terms = query.toLowerCase().match(/\S+/g) || [];
     return list.filter(book => {
@@ -873,16 +999,6 @@ function filterBooksByQuery(list, query) {
                 let op = m[1] || "=";
                 const num = Number(m[2]);
                 const val = book.rating ?? 0;
-                if (op === ">") match = match && val > num;
-                else if (op === ">=") match = match && val >= num;
-                else if (op === "<") match = match && val < num;
-                else if (op === "<=") match = match && val <= num;
-                else if (op === "=" || op === "==") match = match && val === num;
-                else if (op === "!=") match = match && val !== num;
-            } else if ((m = term.match(/^count([<>=!]+)?(\d+)$/))) {
-                let op = m[1] || "=";
-                const num = Number(m[2]);
-                const val = book.readCount ?? 0;
                 if (op === ">") match = match && val > num;
                 else if (op === ">=") match = match && val >= num;
                 else if (op === "<") match = match && val < num;
@@ -914,17 +1030,6 @@ function filterBooksByQuery(list, query) {
                 else if (op === "<=") match = match && val <= num;
                 else if (op === "=" || op === "==") match = match && val === num;
                 else if (op === "!=") match = match && val !== num;
-            } else if ((m = term.match(/^date([<>=!]+)(\d{4})$/))) {
-                const op = m[1], num = Number(m[2]);
-                const dates = (book.dateRead || "").split(",").map(d => d.trim()).filter(Boolean);
-                const firstYear = dates.length ? new Date(dates[0]).getFullYear() : null;
-                if (firstYear === null) { match = false; continue; }
-                if (op === ">") match = match && firstYear > num;
-                else if (op === ">=") match = match && firstYear >= num;
-                else if (op === "<") match = match && firstYear < num;
-                else if (op === "<=") match = match && firstYear <= num;
-                else if (op === "=") match = match && firstYear === num;
-                else if (op === "!=") match = match && firstYear !== num;
             } else if ((m = term.match(/^lang(uage)?:?(.*)$/i))) {
                 const val = m[2];
                 if (val === "" || val === "none") {
@@ -949,36 +1054,13 @@ function filterBooksByQuery(list, query) {
                     const lc = (book.genre || "").toLowerCase();
                     match = match && lc.includes(val.toLowerCase());
                 }
-            } else if ((m = term.match(/^(date)?(added|started|datestarted|dateadded)([<>=!]*)(.*)$/i))) {
-                const field = m[2].toLowerCase().includes("started") ? "dateStarted" : "dateAdded";
-                let op = m[3] || "=";
-                if (op === "==") op = "=";
-                let val = m[4].trim();
-                const bookTs = book[field] || null;
-                if (val === "none" || val === "") {
-                    match = match && (bookTs == null);
-                    continue;
-                }
-                if (val.match(/^\d{4}$/)) {
-                    const year = Number(val);
-                    if (bookTs == null) { match = false; continue; }
-                    const bookYear = new Date(bookTs).getFullYear();
-                    if (op === "=") match = match && bookYear === year;
-                    else if (op === ">") match = match && bookYear > year;
-                    else if (op === ">=") match = match && bookYear >= year;
-                    else if (op === "<") match = match && bookYear < year;
-                    else if (op === "<=") match = match && bookYear <= year;
-                    else if (op === "!=") match = match && bookYear !== year;
+            } else if ((m = term.match(/^tag:?(.*)$/i))) {
+                const val = m[1];
+                if (val === "" || val === "none") {
+                    match = match && (!book.tags || book.tags.length === 0);
                 } else {
-                    const targetTs = Date.parse(val);
-                    if (isNaN(targetTs)) { match = false; continue; }
-                    if (bookTs == null) { match = false; continue; }
-                    if (op === ">") match = match && bookTs > targetTs;
-                    else if (op === ">=") match = match && bookTs >= targetTs;
-                    else if (op === "<") match = match && bookTs < targetTs;
-                    else if (op === "<=") match = match && bookTs <= targetTs;
-                    else if (op === "=") match = match && bookTs === targetTs;
-                    else if (op === "!=") match = match && bookTs !== targetTs;
+                    const lcTags = (book.tags || []).map(t => t.toLowerCase());
+                    match = match && lcTags.some(t => t.includes(val.toLowerCase()));
                 }
             } else {
                 const text = `${book.title} ${book.author} ${book.series || ""} ${book.notes || ""}`.toLowerCase();
@@ -989,22 +1071,26 @@ function filterBooksByQuery(list, query) {
         return match;
     });
 }
+
+// Per-year calculation using reads
 function calculatePerYear() {
     const perYear = {};
     books.forEach(b => {
-        if (b.exclusiveShelf !== "read" || !b.dateRead) return;
-        b.dateRead.split(",").map(d => d.trim()).filter(Boolean).forEach(dateStr => {
-            const dt = new Date(dateStr);
-            if (isNaN(dt)) return;
-            const y = dt.getFullYear();
-            perYear[y] = perYear[y] || { books: 0, pages: 0 };
-            perYear[y].books++;
-            perYear[y].pages += b.pages || 0;
+        if (!b.reads) return;
+        b.reads.forEach(read => {
+            if (read.finished) {
+                const dt = new Date(read.finished);
+                const y = dt.getFullYear();
+                perYear[y] = perYear[y] || { books: 0, pages: 0 };
+                perYear[y].books++;
+                perYear[y].pages += b.pages || 0;
+            }
         });
     });
     return perYear;
 }
-// Table rendering (unchanged)
+
+// Table rendering (updated for reads)
 function renderTable() {
     const showNumbers = document.getElementById("showNumbers").checked;
     const filter = document.getElementById("shelfFilter").value;
@@ -1035,8 +1121,7 @@ function renderTable() {
             <td>${shelvesDisplay}</td>
             <td>${book.pages || "-"}</td>
             <td>${book.year ?? "-"}</td>
-            <td>${book.dateRead || "-"}</td>
-            <td>${book.readCount ?? "-"}</td>
+            <td>${getReadCount(book)}</td>
             <td><button class="editBtn" style="padding:2px 6px;">✎</button></td>
         `;
         tbody.appendChild(tr);
@@ -1049,26 +1134,23 @@ function renderTable() {
         }
     });
 }
-// Timeline (unchanged)
+
+// Timeline using all finished reads
 function renderTimeline() {
     const container = document.getElementById("timelineContainer");
     container.innerHTML = "";
-    const readBooks = books.filter(b => b.exclusiveShelf === "read" && b.dateRead);
-    if (!readBooks.length) {
-        container.innerHTML = "<p>No reading history yet.</p>";
-        return;
-    }
     const entries = [];
-    readBooks.forEach(b => {
-        const dates = b.dateRead.split(",").map(d => d.trim()).filter(Boolean);
-        dates.forEach(dateStr => {
-            const dt = new Date(dateStr);
-            if (isNaN(dt)) return;
-            entries.push({ book: b, date: dt });
-        });
+    books.forEach(b => {
+        if (b.reads) {
+            b.reads.forEach(read => {
+                if (read.finished) {
+                    entries.push({ book: b, date: new Date(read.finished) });
+                }
+            });
+        }
     });
     if (entries.length === 0) {
-        container.innerHTML = "<p>No valid read dates.</p>";
+        container.innerHTML = "<p>No reading history yet.</p>";
         return;
     }
     entries.sort((a, b) => b.date - a.date);
@@ -1109,7 +1191,8 @@ function renderTimeline() {
         container.appendChild(div);
     });
 }
-// Stats (unchanged except goal display uses current year)
+
+// Stats with reading speed
 function renderStats() {
     const container = document.getElementById("stats");
     const ctx = document.getElementById("statsChart").getContext("2d");
@@ -1120,7 +1203,7 @@ function renderStats() {
     const perYear = calculatePerYear();
     const readBooks = books.filter(b => b.exclusiveShelf === "read");
     const dnfBooks = books.filter(b => b.exclusiveShelf === "dnf");
-    const pagesRead = readBooks.reduce((s, b) => s + (b.pages || 0) * Math.max(1, b.readCount || 1), 0);
+    const pagesRead = readBooks.reduce((s, b) => s + (b.pages || 0) * getReadCount(b), 0);
     const selectedYear = Number(goalYear.value) || new Date().getFullYear();
     const currentPages = perYear[selectedYear]?.pages || 0;
     const currentBooks = perYear[selectedYear]?.books || 0;
@@ -1147,12 +1230,15 @@ function renderStats() {
     readBooks.forEach(b => {
         if (!longest || b.pages > longest.pages) longest = b;
         if (!shortest || (b.pages > 0 && b.pages < shortest.pages)) shortest = b;
-        if (!mostReread || b.readCount > mostReread.readCount) mostReread = b;
+        if (!mostReread || getReadCount(b) > getReadCount(mostReread || {})) mostReread = b;
     });
     Object.entries(perYear).forEach(([y, s]) => {
         if (s.books > maxYearBooks) { maxYearBooks = s.books; maxYearBooksYear = y; }
         if (s.pages > maxYearPages) { maxYearPages = s.pages; maxYearPagesYear = y; }
     });
+
+    const speeds = calculateReadingSpeeds();
+
     let html = '<div class="stats-upper">';
     html += '<div class="stats-block"><h2>Overall Stats</h2>';
     if (pagesGoal || booksGoal) {
@@ -1168,6 +1254,7 @@ function renderStats() {
     html += `<div>DNF</div><div>${dnfBooks.length}</div>`;
     html += `<div>Pages read (× count)</div><div>${pagesRead}</div>`;
     html += '</div></div>';
+
     html += '<div class="stats-block"><h2>Favorite Authors</h2><div class="stats-list">';
     html += '<strong>By books read:</strong><br>';
     topByCount.forEach(([a, s]) => html += `• ${a}: ${s.count} book${s.count > 1 ? 's' : ''}<br>`);
@@ -1175,24 +1262,40 @@ function renderStats() {
     if (topByAvg.length === 0) html += "No authors meet minimum<br>";
     topByAvg.forEach(([a, avg, rated]) => html += `• ${a}: ${avg} (${rated} rated)<br>`);
     html += '</div></div>';
+
     html += '<div class="stats-block"><h2>Personal Records</h2><div class="stats-list">';
     if (longest) html += `Longest book: <strong>${longest.title}</strong> (${longest.pages} pages)<br>`;
     if (shortest) html += `Shortest book: <strong>${shortest.title}</strong> (${shortest.pages} pages)<br>`;
-    if (mostReread && mostReread.readCount > 1) html += `Most re-read: <strong>${mostReread.title}</strong> (${mostReread.readCount} times)<br>`;
+    if (mostReread && getReadCount(mostReread) > 1) html += `Most re-read: <strong>${mostReread.title}</strong> (${getReadCount(mostReread)} times)<br>`;
     if (maxYearBooksYear) html += `Most books in a year: ${maxYearBooks} (${maxYearBooksYear})<br>`;
     if (maxYearPagesYear) html += `Most pages in a year: ${maxYearPages} (${maxYearPagesYear})<br>`;
     html += '</div></div>';
+
+    // Reading speed block
+    html += '<div class="stats-block"><h2>Reading Speed</h2><div class="stats-list">';
+    html += `<strong>Average:</strong> ${speeds.avg} pages/day<br>`;
+    if (speeds.fastest) {
+        html += `<strong>Fastest:</strong> ${speeds.fastest.book.title} (${speeds.fastest.speed.toFixed(1)} p/d over ${speeds.fastest.days.toFixed(1)} days)<br>`;
+    }
+    if (speeds.slowest) {
+        html += `<strong>Slowest:</strong> ${speeds.slowest.book.title} (${speeds.slowest.speed.toFixed(1)} p/d over ${speeds.slowest.days.toFixed(1)} days)<br>`;
+    }
+    html += '</div></div>';
+
     html += '</div>';
+
     html += '<div class="stats-year-block"><h2>By Year</h2><div class="stats-list">';
-if (Object.keys(perYear).length === 0) {
-    html += "none";
-} else {
-    Object.keys(perYear).sort((a, b) => b - a).forEach(y => {
-        html += `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages<br>`;
-    });
-}
-html += '</div></div>';
+    if (Object.keys(perYear).length === 0) {
+        html += "none";
+    } else {
+        Object.keys(perYear).sort((a, b) => b - a).forEach(y => {
+            html += `${y}: ${perYear[y].books} books, ${perYear[y].pages} pages<br>`;
+        });
+    }
+    html += '</div></div>';
+
     container.innerHTML = html;
+
     const labels = Object.keys(perYear).sort((a,b) => a - b);
     if (labels.length === 0) return;
     const booksData = labels.map(y => perYear[y].books);
@@ -1215,12 +1318,12 @@ html += '</div></div>';
     });
 }
 
-// Profile stats
+// Profile stats (updated for read count)
 function renderProfileStats() {
     const container = document.getElementById("profileStats");
     const readBooks = books.filter(b => b.exclusiveShelf === "read");
     const ratedBooks = readBooks.filter(b => b.rating > 0);
-    const pagesRead = readBooks.reduce((s, b) => s + (b.pages || 0) * Math.max(1, b.readCount || 1), 0);
+    const pagesRead = readBooks.reduce((s, b) => s + (b.pages || 0) * getReadCount(b), 0);
     const avgRating = ratedBooks.length ? (ratedBooks.reduce((s, b) => s + b.rating, 0) / ratedBooks.length).toFixed(1) : "-";
     container.innerHTML = `
         <h2>Reading Stats</h2>
@@ -1232,7 +1335,7 @@ function renderProfileStats() {
     `;
 }
 
-// Shelf manager
+// Shelf manager (unchanged)
 function renderShelfManager() {
     const container = document.getElementById("shelfManager");
     container.innerHTML = "";
@@ -1279,7 +1382,7 @@ function renderShelfManager() {
     });
 }
 
-// Recent books in profile
+// Recent books (unchanged)
 function renderRecentBooks() {
     const container = document.getElementById("recentBooksContainer");
     container.innerHTML = "";
@@ -1291,7 +1394,7 @@ function renderRecentBooks() {
         container.appendChild(section);
         currently.sort(sortDesc).forEach(b => section.querySelector(".card-container").appendChild(createBookCard(b)));
     }
-    let finished = books.filter(b => b.exclusiveShelf === "read" && b.lastFinished);
+    let finished = books.filter(b => b.exclusiveShelf === "read" && getLatestFinished(b) > 0);
     if (finished.length) {
         const section = document.createElement("div");
         section.innerHTML = "<h4>Recently Finished</h4><div class=\"card-container\"></div>";
@@ -1308,7 +1411,7 @@ function renderRecentBooks() {
     if (!container.innerHTML.trim()) container.innerHTML = "<p>No activity yet.</p>";
 }
 
-// Favourites in profile
+// Favourites (unchanged)
 function renderFavourites() {
     const container = document.getElementById("favouritesContainer");
     container.innerHTML = "";
@@ -1344,7 +1447,7 @@ function renderFavourites() {
     if (!hasContent) container.innerHTML = "<p>No favourites yet.</p>";
 }
 
-// Goals
+// Goals functions (unchanged)
 function loadGoalsForYear() {
     const year = Number(goalYear.value) || new Date().getFullYear();
     goalYear.value = year;
@@ -1352,10 +1455,12 @@ function loadGoalsForYear() {
     yearPagesGoal.value = g.pages || "";
     yearBooksGoal.value = g.books || "";
 }
+
 goalYear.addEventListener("change", () => {
     loadGoalsForYear();
     renderStats();
 });
+
 document.getElementById("saveGoal").addEventListener("click", () => {
     const year = Number(goalYear.value) || new Date().getFullYear();
     const pages = Number(yearPagesGoal.value) || 0;
@@ -1368,6 +1473,7 @@ document.getElementById("saveGoal").addEventListener("click", () => {
     localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
     renderStats();
 });
+
 document.getElementById("removeGoal").addEventListener("click", () => {
     const year = Number(goalYear.value);
     if (goals[year] && confirm(`Remove goals for ${year}?`)) {
@@ -1377,97 +1483,70 @@ document.getElementById("removeGoal").addEventListener("click", () => {
         renderStats();
     }
 });
+
 minAuthorBooksInput.addEventListener("change", () => {
     minAuthorBooks = Math.max(1, Number(minAuthorBooksInput.value) || 2);
     localStorage.setItem(MIN_AUTHOR_BOOKS_KEY, minAuthorBooks);
     renderStats();
 });
+
 document.getElementById("showCoversTimeline").addEventListener("change", e => {
     showCoversInTimeline = e.target.checked;
     localStorage.setItem(SHOW_COVERS_TIMELINE_KEY, JSON.stringify(showCoversInTimeline));
     renderTimeline();
 });
 
-// Save edit
-document.getElementById("saveEdit").addEventListener("click", () => {
-    const now = Date.now();
-    const data = {
-        title: document.getElementById("editTitle").value.trim(),
-        author: document.getElementById("editAuthor").value.trim(),
-        series: document.getElementById("editSeries").value.trim(),
-        seriesNumber: document.getElementById("editSeriesNumber").value ? Number(document.getElementById("editSeriesNumber").value) : null,
-        language: document.getElementById("editLanguage").value.trim() || null,
-        country: document.getElementById("editCountry").value.trim() || null,
-        genre: document.getElementById("editGenre").value.trim() || null,
-        shelves: document.getElementById("editShelves").value.split(",").map(s => s.trim()).filter(Boolean),
-        exclusiveShelf: document.getElementById("editExclusiveShelf").value,
-        pages: Number(document.getElementById("editPages").value) || 0,
-        year: Number(document.getElementById("editYear").value) || null,
-        dateRead: document.getElementById("editDateRead").value.trim(),
-        readCount: Number(document.getElementById("editReadCount").value) || 0,
-        rating: Number(document.getElementById("editRating").value) || 0,
-        notes: document.getElementById("editNotes").value.trim(),
-        coverUrl: document.getElementById("editCoverUrl").value.trim() || null
-     };
-    const bumpNow = document.getElementById("editBumpRecent").checked;
-    if (editingBook) {
-        Object.assign(editingBook, data);
+// Sorting comparison (updated for readCount)
+function compare(a, b, col) {
+    let av = a[col];
+    let bv = b[col];
+    if (col === "year") {
+        av = av ?? Infinity;
+        bv = bv ?? Infinity;
+        return av - bv;
+    }
+    if (col === "pages" || col === "rating") {
+        av = av ?? 0;
+        bv = bv ?? 0;
+        return av - bv;
+    }
+    if (col === "readCount") {
+        av = getReadCount(a);
+        bv = getReadCount(b);
+        return av - bv;
+    }
+    if (col === "shelves") {
+        av = [a.exclusiveShelf, ...(a.shelves || [])].join(", ");
+        bv = [b.exclusiveShelf, ...(b.shelves || [])].join(", ");
+    }
+    av = av ?? "";
+    bv = bv ?? "";
+    return String(av).localeCompare(String(bv));
+}
+
+function handleSort(col) {
+    if (sortState.column === col) {
+        sortState.direction *= -1;
     } else {
-        data.importOrder = nextImportOrder++;
-        data.dateAdded = now;
-        books.unshift(data);
-        editingBook = data;
+        sortState.column = col;
+        sortState.direction = 1;
     }
-    const addedDateStr = document.getElementById("editDateAdded").value;
-    if (addedDateStr) {
-        const temp = new Date(addedDateStr);
-        if (!isNaN(temp)) editingBook.dateAdded = temp.getTime();
-    } else if (!editingBook.dateAdded) {
-        editingBook.dateAdded = now;
-    }
-    const startedDateStr = document.getElementById("editDateStarted").value;
-    let dateStartedVal = editingBook.dateStarted;
-    if (startedDateStr) {
-        const temp = new Date(startedDateStr);
-        if (!isNaN(temp)) dateStartedVal = temp.getTime();
-    }
-    if (data.exclusiveShelf === "currently-reading") {
-        editingBook.dateStarted = dateStartedVal ?? now;
+    updateSortIndicators();
+    renderTable();
+}
+
+function updateSortIndicators() {
+    document.querySelectorAll(".sort").forEach(s => s.textContent = "");
+    document.getElementById("recentSortIndicator").textContent = "";
+    if (sortState.column) {
+        const el = document.querySelector(`th[data-col="${sortState.column}"] .sort`);
+        if (el) el.textContent = sortState.direction > 0 ? "▲" : "▼";
     } else {
-        editingBook.dateStarted = null;
+        document.getElementById("recentSortIndicator").textContent = sortState.direction > 0 ? "▼" : "▲";
     }
-    if (data.exclusiveShelf === "read") {
-        const timestamps = (data.dateRead || "").split(",")
-            .map(d => d.trim())
-            .filter(Boolean)
-            .map(d => new Date(d).getTime())
-            .filter(t => !isNaN(t));
-        editingBook.lastFinished = timestamps.length ? Math.max(...timestamps) : now;
-    } else {
-        editingBook.lastFinished = null;
-    }
-    if (bumpNow) {
-        editingBook.bumpTime = now;
-    }
-    const bookId = editingBook.importOrder;
-    const isFav = document.getElementById("editFavourite").checked;
-    if (isFav) {
-        if (!profile.favourites.includes(bookId)) profile.favourites.push(bookId);
-    } else {
-        profile.favourites = profile.favourites.filter(id => id !== bookId);
-    }
-    const isFavSeries = document.getElementById("editFavouriteSeries").checked;
-    if (isFavSeries && data.series && !profile.favouriteSeries.includes(data.series)) {
-        profile.favouriteSeries.push(data.series);
-    } else if (!isFavSeries && data.series) {
-        profile.favouriteSeries = profile.favouriteSeries.filter(s => s !== data.series);
-    }
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-    saveBooksToLocal();
-    renderAll();
-    closeEditModal();
-});
- // Event listeners
+}
+
+// Event listeners (full)
 document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 document.getElementById("addBook").addEventListener("click", () => openEditModal());
 document.getElementById("searchInput").addEventListener("input", renderTable);
@@ -1576,25 +1655,39 @@ document.getElementById("closeEdit").addEventListener("click", closeEditModal);
 document.getElementById("editModal").addEventListener("click", e => {
     if (e.target === document.getElementById("editModal")) closeEditModal();
 });
+document.getElementById("fetchCoverBtn").addEventListener("click", async () => {
+    const title = document.getElementById("editTitle").value.trim();
+    if (!title) return alert("Enter a title first.");
+    const tempBook = {
+        title: title,
+        author: document.getElementById("editAuthor").value.trim()
+    };
+    const url = await fetchCover(tempBook);
+    const preview = document.getElementById("coverPreview");
+    if (url) {
+        document.getElementById("editCoverUrl").value = url;
+        preview.src = url;
+        preview.style.display = "block";
+    } else {
+        alert("No cover found for this book.");
+    }
+});
 document.getElementById("filterInfo").addEventListener("click", () => {
     alert(`Search syntax:
 • Normal words → title / author / series / notes
 • rated>3 rated=0 (unrated) rated>=4 etc.
 • pages>300 pages<=100 pages=500
 • year>=-50 year<10 year=-500 (negative = BC)
-• count>1 (rereads)
-• date=2024 (first read year)
 • cover=true/false or cover=1/0
 • lang:english, language:jap, lang:none
 • country:japan, country:usa, country:none
 • genre:fantasy, genre:mystery, genre:none
+• tag:mood, tag:prize, tag:none
 • added:2024, added>2023-06-01, added:none
-• started:2025, started<2024, started:none
-Also accepts dateadded: and datestarted:
 Combine with spaces (AND).`);
 });
-    
-// Import helpers
+
+// Import helpers (unchanged)
 function parseCSVLine(line) {
     const result = [];
     let field = "";
@@ -1636,18 +1729,14 @@ function parseCSV(text) {
             shelves: extraShelves,
             pages: Number(cols[idx("Number of Pages")]) || 0,
             year: Number(cols[idx("Original Publication Year")]) || null,
-            dateRead: cols[idx("Date Read")] || "",
-            readCount: Number(cols[idx("Read Count")]) || 1,
             rating: Number(cols[idx("My Rating")]) || 0,
             notes: cols[idx("My Review")] || "",
             importOrder: nextImportOrder++,
             dateAdded: Date.now(),
-            isbn: isbn || null
+            isbn: isbn || null,
+            reads: [],
+            tags: []
         };
-        if (book.exclusiveShelf === "read") {
-            const ts = getLatestReadTimestamp(book);
-            if (ts > 0) book.lastFinished = ts;
-        }
         books.push(book);
     }
     saveBooksToLocal();
@@ -1674,4 +1763,3 @@ loadGoalsForYear();
 </script>
 </body>
 </html>
-
